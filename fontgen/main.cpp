@@ -120,8 +120,8 @@ int main(int argc, char** argv)
 
     typedef std::array<int, 9 * 16> Glyph;
     typedef std::array<Glyph, 256> Font;
-    Font font;
-    
+    Font* font = new Font();
+
     for (int i = 0; i < 256; ++i)
     {
         int gx = (i & 63) * 9;
@@ -132,7 +132,7 @@ int main(int argc, char** argv)
         {
             for (int x = 0; x < 9; ++x)
             {
-                font[i][gi++] = !!png(gx + x, gy + y, 0);
+                (*font)[i][gi++] = !!png(gx + x, gy + y, 0);
             }
         }
     }
@@ -151,7 +151,7 @@ int main(int argc, char** argv)
     of << "static const int " << name << "_glyph_count = 256;\n";
     of << "static const int " << name << "_glyphs[" << name << "_glyph_width * " << name << "_glyph_height][" << name << "_glyph_count] = {";
 
-    for (const Glyph& g : font)
+    for (const Glyph& g : (*font))
     {
         of << "\n";
 
@@ -169,6 +169,8 @@ int main(int argc, char** argv)
     of << "};\n";
 
     of.close();
+
+    delete font;
 
     return 0;
 }

@@ -1,6 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
+#include <cstdarg>
+#include <cstdint>
+#include <string>
+#include <fstream>
+#include <iterator>
+#include <vector>
 
 #define NOMINMAX
 #include <Windows.h>
@@ -68,10 +75,12 @@ public:
         }
 
         // Initialise frame buffer
+        size_t buffer_size = size_t(screen_width) * size_t(screen_height);
+
         for (int i = 0; i < 2; ++i)
         {
-            m_framebuffer[i] = new uint8_t[screen_width * screen_height];
-            memset(m_framebuffer[i], 0, screen_width * screen_height);
+            m_framebuffer[i] = new uint8_t[buffer_size];
+            memset(m_framebuffer[i], 0, buffer_size);
         }
 
         // Set default palette
@@ -125,7 +134,7 @@ public:
             float delta = elapsed_time.count();
 
             wchar_t title[256];
-            swprintf(title, 256, L"%s - %llu us", m_title, (uint64_t)(delta * 1000000.0f));
+            swprintf(title, 256, L"%s - %llu us", m_title, uint64_t(delta * 1000000.0));
             SetWindowText(m_hwnd, title);
 
             // Process Windows messages
@@ -194,7 +203,7 @@ public:
         }
     }
 
-    uint8_t get_pixel(uint32_t x, uint32_t y)
+    uint8_t get_pixel(int x, int y)
     {
         uint8_t p = 0;
 
@@ -231,10 +240,25 @@ public:
         }
     }
 
+    void load_palette(const std::string& path)
+    {
+        uint8_t palette[256];
+        memset(palette, 0, sizeof(palette));
+        std::ifstream f(path, std::ios::binary);
+
+        if (f)
+        {
+            f.read((char*)palette, 256);
+        }
+
+        set_palette(palette);
+    }
+
     void clear_screen(uint8_t c)
     {
         uint8_t* backbuffer = m_framebuffer[m_frontbuffer ^ 1];
-        memset(backbuffer, c, screen_width * screen_height);
+        size_t buffer_size = size_t(screen_width) * size_t(screen_height);
+        memset(backbuffer, c, buffer_size);
     }
 
     void draw_line(int x1, int y1, int x2, int y2, uint8_t c)
@@ -287,7 +311,7 @@ public:
     void draw_char(int x, int y, char c, const int* glyphs, int w, int h, uint8_t fg, uint8_t bg)
     {
         uint8_t colors[2] = { bg, fg };
-        const int* glyph = glyphs + c * (w * h);
+        const int* glyph = glyphs + c * w * h;
 
         for (int py = 0; py < h; ++py)
         {
@@ -304,7 +328,7 @@ public:
 
         for (const char* c = str; *c; ++c)
         {
-            const int* glyph = glyphs + *c * (w * h);
+            const int* glyph = glyphs + *c * w * h;
 
             for (int py = 0; py < h; ++py)
             {
@@ -315,6 +339,58 @@ public:
             }
 
             x += w;
+        }
+    }
+
+    void format_string(int x, int y, const int* glyphs, int w, int h, uint8_t fg, uint8_t bg, const char* fmt, ...)
+    {
+        va_list args;
+        va_start(args, fmt);
+        int len = vsnprintf(nullptr, 0, fmt, args) + 1;
+        va_end(args);
+
+        char* buf = (char*)_malloca(len);
+
+        if (!buf)
+        {
+            return;
+        }
+
+        va_start(args, fmt);
+        vsnprintf(buf, len, fmt, args);
+        va_end(args);
+
+        draw_string(x, y, buf, glyphs, w, h, fg, bg);
+
+        _freea(buf);
+    }
+
+    void draw_rect(int x, int y, int w, int h, uint8_t c)
+    {
+        for (int px = 0; px < w; ++px)
+        {
+            set_pixel(x + px, y, c);
+            set_pixel(x + px, y + h - 1, c);
+        }
+
+        for (int py = 0; py < h; ++py)
+        {
+            set_pixel(x, y + py, c);
+            set_pixel(x + w - 1, y + py, c);
+        }
+    }
+
+    void fill_rect(int x, int y, int w, int h, int bw, uint8_t fg, uint8_t bg)
+    {
+        uint8_t colors[2] = { fg, bg };
+
+        for (int py = 0; py < h; ++py)
+        {
+            for (int px = 0; px < w; ++px)
+            {
+                int color_index = (px < bw || px > w - 1 - bw || py < bw || py > h - 1 - bw);
+                set_pixel(x + px, y + py, colors[color_index]);
+            }
         }
     }
 
@@ -351,6 +427,7 @@ private:
         PAINTSTRUCT ps = {};
         HDC hDC = BeginPaint(m_hwnd, &ps);
 
+#if 1
         char bmi_memory[sizeof(BITMAPINFO) + 256 * sizeof(RGBQUAD)];
         BITMAPINFO* bmi = (BITMAPINFO*)bmi_memory;
         ZeroMemory(bmi, sizeof(BITMAPINFO));
@@ -360,6 +437,18 @@ private:
         bmi->bmiHeader.biWidth = screen_width;
         bmi->bmiHeader.biPlanes = 1;
         memcpy(bmi->bmiColors, m_palette, 256 * sizeof(RGBQUAD));
+#else
+        char bmi_memory[sizeof(BITMAPINFO)];
+        BITMAPINFO* bmi = (BITMAPINFO*)bmi_memory;
+        ZeroMemory(bmi, sizeof(BITMAPINFO));
+        bmi->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi->bmiHeader.biBitCount = 32;
+        bmi->bmiHeader.biCompression = BI_RGB;
+        bmi->bmiHeader.biHeight = -screen_height;
+        bmi->bmiHeader.biWidth = screen_width;
+        bmi->bmiHeader.biPlanes = 1;
+        //memcpy(bmi->bmiColors, m_palette, 256 * sizeof(RGBQUAD));
+#endif
 
         HDC hMemDC = CreateCompatibleDC(hDC);
         HBITMAP hBitmap = CreateDIBSection(hMemDC, bmi, DIB_RGB_COLORS, NULL, NULL, 0);
@@ -386,6 +475,11 @@ private:
             case WM_PAINT:
             {
                 return vgfw->on_paint();
+            }
+            case WM_SYSKEYDOWN:
+            {
+                // Don't let Windows hi-jack F10 and alt-key combinations
+                return 0;
             }
         }
 
