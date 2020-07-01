@@ -21,9 +21,15 @@
     <ClInclude Include="vga9.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="gli2C02.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gli2C02.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

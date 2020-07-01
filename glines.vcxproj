@@ -139,10 +139,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="gli2C02.h" />
     <ClInclude Include="vga9.h" />
     <ClInclude Include="vgfw.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="gli2C02.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
