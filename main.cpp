@@ -81,25 +81,25 @@ enum Opcode : uint8_t
     TYA,
 
     // Unofficial
-    STP,    // aka HLT
-    SLO,    // aka ASO
-    RLA,
-    SRE,    // aka LSE
-    RRA,
+    AHX,    // aka AXA
+    ALR,
+    ANC,
+    ARR,
     AXS,
-    LAX,
     DCP,    // aka DCM
     ISC,    // aka INS
-    ALR,
-    ARR,
-    XAA,
+    LAS,
+    LAX,
+    RLA,
+    RRA,
     SAX,
-    TAS,
-    SHY,    // aka SAY
     SHX,    // aka XAS
-    AHX,    // aka AXA
-    ANC,
-    LAS
+    SHY,    // aka SAY
+    SLO,    // aka ASO
+    SRE,    // aka LSE
+    STP,    // aka HLT
+    TAS,
+    XAA
 };
 
 struct Instruction
@@ -137,7 +137,7 @@ static const Instruction InstructionTable[] =
     { Opcode::ASL,  "ASL", AddressingMode::ZeroPage_X,    0 },    // 16
     { Opcode::SLO,  "SLO", AddressingMode::ZeroPage_X,    0 },    // 17
     { Opcode::CLC,  "CLC", AddressingMode::Implied,       0 },    // 18
-    { Opcode::ORA,  "ORA", AddressingMode::ZeroPage_Y,    0 },    // 19
+    { Opcode::ORA,  "ORA", AddressingMode::Absolute_Y,    0 },    // 19
     { Opcode::NOP,  "NOP", AddressingMode::Implied,       0 },    // 1A
     { Opcode::SLO,  "SLO", AddressingMode::Absolute_Y,    0 },    // 1B
     { Opcode::NOP,  "NOP", AddressingMode::Absolute_X,    0 },    // 1C
@@ -207,14 +207,14 @@ static const Instruction InstructionTable[] =
     { Opcode::NOP,  "NOP", AddressingMode::Implied,       0 },    // 5A
     { Opcode::SRE,  "SRE", AddressingMode::Absolute_Y,    0 },    // 5B
     { Opcode::NOP,  "NOP", AddressingMode::Absolute_X,    0 },    // 5C
-    { Opcode::AND,  "AND", AddressingMode::Absolute_X,    0 },    // 5D
-    { Opcode::ROL,  "ROL", AddressingMode::Absolute_X,    0 },    // 5E
-    { Opcode::RLA,  "RLA", AddressingMode::Absolute_X,    0 },    // 5F
+    { Opcode::EOR,  "EOR", AddressingMode::Absolute_X,    0 },    // 5D
+    { Opcode::LSR,  "LSR", AddressingMode::Absolute_X,    0 },    // 5E
+    { Opcode::SRE,  "SRE", AddressingMode::Absolute_X,    0 },    // 5F
 
     { Opcode::RTS,  "RTS", AddressingMode::Implied,       0 },    // 60
     { Opcode::ADC,  "ADC", AddressingMode::Indirect_X,    0 },    // 61
     { Opcode::STP,  "STP", AddressingMode::Implied,       0 },    // 62
-    { Opcode::RRA,  "SRE", AddressingMode::Indirect_X,    0 },    // 63
+    { Opcode::RRA,  "RRA", AddressingMode::Indirect_X,    0 },    // 63
     { Opcode::NOP,  "NOP", AddressingMode::ZeroPage,      0 },    // 64
     { Opcode::ADC,  "ADC", AddressingMode::ZeroPage,      0 },    // 65
     { Opcode::ROR,  "ROR", AddressingMode::ZeroPage,      0 },    // 66
@@ -266,8 +266,8 @@ static const Instruction InstructionTable[] =
     { Opcode::AHX,  "AHX", AddressingMode::Indirect_Y,    0 },    // 93
     { Opcode::STY,  "STY", AddressingMode::ZeroPage_X,    0 },    // 94
     { Opcode::STA,  "STA", AddressingMode::ZeroPage_X,    0 },    // 95
-    { Opcode::STX,  "STX", AddressingMode::ZeroPage_X,    0 },    // 96
-    { Opcode::SAX,  "SAX", AddressingMode::ZeroPage_X,    0 },    // 97
+    { Opcode::STX,  "STX", AddressingMode::ZeroPage_Y,    0 },    // 96
+    { Opcode::SAX,  "SAX", AddressingMode::ZeroPage_Y,    0 },    // 97
     { Opcode::TYA,  "TYA", AddressingMode::Implied,       0 },    // 98
     { Opcode::STA,  "STA", AddressingMode::Absolute_Y,    0 },    // 99
     { Opcode::TXS,  "TXS", AddressingMode::Implied,       0 },    // 9A
@@ -299,8 +299,8 @@ static const Instruction InstructionTable[] =
     { Opcode::LAX,  "LAX", AddressingMode::Indirect_Y,    0 },    // B3
     { Opcode::LDY,  "LDY", AddressingMode::ZeroPage_X,    0 },    // B4
     { Opcode::LDA,  "LDA", AddressingMode::ZeroPage_X,    0 },    // B5
-    { Opcode::LDX,  "LDX", AddressingMode::ZeroPage_X,    0 },    // B6
-    { Opcode::LAX,  "LAX", AddressingMode::ZeroPage_X,    0 },    // B7
+    { Opcode::LDX,  "LDX", AddressingMode::ZeroPage_Y,    0 },    // B6
+    { Opcode::LAX,  "LAX", AddressingMode::ZeroPage_Y,    0 },    // B7
     { Opcode::CLV,  "CLV", AddressingMode::Implied,       0 },    // B8
     { Opcode::LDA,  "LDA", AddressingMode::Absolute_Y,    0 },    // B9
     { Opcode::TSX,  "TSX", AddressingMode::Implied,       0 },    // BA
@@ -379,16 +379,18 @@ static const Instruction InstructionTable[] =
 
 enum StatusBits : uint8_t
 {
-    Carry = 0,
-    Zero = 1,
-    InterruptDisable = 2,
-    Decimal = 3,
-    Overflow = 6,
-    Negative = 7
+    C = 0,
+    Z = 1,
+    I = 2,
+    D = 3,
+    B = 4,  // Never held in process status register
+    X = 5,  // Never held in process status register
+    V = 6,
+    N = 7
 };
 
 template <typename T>
-void SetBit(T& flags, uint8_t bit, bool set)
+void set_bit(T& flags, uint8_t bit, int set)
 {
     T mask = T(1) << bit;
     flags |= set ? mask : T(0);
@@ -396,10 +398,9 @@ void SetBit(T& flags, uint8_t bit, bool set)
 }
 
 template <typename T>
-bool TestBit(T& flags, uint8_t bit)
+int get_bit(T flags, uint8_t bit)
 {
-    T mask = T(1) << bit;
-    return (flags & mask) == mask;
+    return (flags >> bit) & 1;
 }
 
 inline uint8_t lo(uint16_t w)
@@ -477,7 +478,7 @@ public:
         if (coldstart)
         {
             // https://wiki.nesdev.com/w/index.php/CPU_ALL#At_power-up
-            _p = 0x34;
+            _p = 0x24;
             _a = _x = _y = 0;
             _s = 0xfd;
         }
@@ -491,14 +492,14 @@ public:
 
     void push(uint8_t value)
     {
-        write(_s, value);
+        write(0x100 + _s, value);
         _s -= 1;
     }
 
     uint8_t pop()
     {
         _s += 1;
-        return read(_s);
+        return read(0x100 + _s);
     }
 
     void exec(const Instruction& instruction)
@@ -544,32 +545,39 @@ public:
             }
             case Absolute_X:
             {
-                address = read_word(_pc + 1) + _x;
+                address = read_word(_pc) + _x;
                 _pc += 2;
                 break;
             }
             case Absolute_Y:
             {
-                address = read_word(_pc + 1) + _y;
+                address = read_word(_pc) + _y;
                 _pc += 2;
                 break;
             }
             case Indirect:
             {
-                address = read_word(_pc + 1);
+                uint16_t indirect_address = read_word(_pc);
                 _pc += 2;
+                uint8_t address_lo = read(indirect_address);
+                uint8_t address_hi = read(make_word(lo(indirect_address + 1), hi(indirect_address)));
+                address = make_word(address_lo, address_hi);
                 break;
             }
             case Indirect_X:
             {
-                uint16_t address = read(_pc++) + _x;
-                address = read_word(address);
+                uint16_t indirect_address = lo(read(_pc++) + _x);
+                uint8_t address_lo = read(indirect_address);
+                uint8_t address_hi = read(make_word(lo(indirect_address + 1), hi(indirect_address)));
+                address = make_word(address_lo, address_hi);
                 break;
             }
             case Indirect_Y:
             {
-                uint16_t address = read(_pc++);
-                address = read_word(address) + _a;
+                uint16_t indirect_address = read(_pc++);
+                uint8_t address_lo = read(indirect_address);
+                uint8_t address_hi = read(make_word(lo(indirect_address + 1), hi(indirect_address)));
+                address = make_word(address_lo, address_hi) + _y;
                 break;
             }
         }
@@ -579,21 +587,78 @@ public:
         auto load_register = [this, &value](uint8_t& reg)
         {
             reg = lo(value);
-            SetBit(_p, StatusBits::Zero, reg == 0);
-            SetBit(_p, StatusBits::Negative, TestBit(reg, 7));
+            set_bit(_p, StatusBits::Z, reg == 0);
+            set_bit(_p, StatusBits::N, get_bit(reg, 7));
+        };
+
+        auto decrement = [this](uint8_t& value)
+        {
+            value = value - 1;
+            set_bit(_p, StatusBits::Z, value == 0);
+            set_bit(_p, StatusBits::N, get_bit(value, 7));
+        };
+
+        auto increment = [this](uint8_t& value)
+        {
+            value = value + 1;
+            set_bit(_p, StatusBits::Z, value == 0);
+            set_bit(_p, StatusBits::N, get_bit(value, 7));
+        };
+
+        auto adc = [this, &value]()
+        {
+            uint16_t sum = _a + value + get_bit(_p, StatusBits::C);
+            set_bit(_p, StatusBits::C, get_bit(sum, 8));
+            set_bit(_p, StatusBits::V, (get_bit((_a ^ sum) & (value ^ sum), 7)));
+            _a = lo(sum);
+            set_bit(_p, StatusBits::Z, _a == 0);
+            set_bit(_p, StatusBits::N, get_bit(_a, 7));
+        };
+
+        auto cmp = [this, &value, &address](uint8_t reg)
+        {
+            value = read(address);
+            set_bit(_p, StatusBits::C, reg >= value);
+            set_bit(_p, StatusBits::Z, reg == value);
+            set_bit(_p, StatusBits::N, get_bit(reg - value, 7));
         };
 
         switch (instruction.opcode)
         {
+            case Opcode::ADC:
+            {
+                value = read(address);
+                adc();
+                break;
+            }
             case Opcode::AND:
             {
                 value = _a & read(address);
                 load_register(_a);
                 break;
             }
+            case Opcode::ASL:
+            {
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    set_bit(_p, StatusBits::C, get_bit(_a, 7));
+                    value = _a << 1;
+                    load_register(_a);
+                }
+                else
+                {
+                    value = read(address);
+                    set_bit(_p, StatusBits::C, get_bit(value, 7));
+                    value <<= 1;
+                    set_bit(_p, StatusBits::Z, _a == 0);
+                    set_bit(_p, StatusBits::N, get_bit(value, 7));
+                    write(address, value);
+                }
+                break;
+            }
             case Opcode::BCC:
             {
-                if (!TestBit(_p, StatusBits::Carry))
+                if (!get_bit(_p, StatusBits::C))
                 {
                     _pc = address;
                 }
@@ -601,7 +666,7 @@ public:
             }
             case Opcode::BCS:
             {
-                if (TestBit(_p, StatusBits::Carry))
+                if (get_bit(_p, StatusBits::C))
                 {
                     _pc = address;
                 }
@@ -609,7 +674,7 @@ public:
             }
             case Opcode::BEQ:
             {
-                if (TestBit(_p, StatusBits::Zero))
+                if (get_bit(_p, StatusBits::Z))
                 {
                     _pc = address;
                 }
@@ -618,14 +683,14 @@ public:
             case Opcode::BIT:
             {
                 value = read(address);
-                SetBit(_p, StatusBits::Zero, (_a & value) == 0);
-                SetBit(_p, StatusBits::Overflow, TestBit(value, 6));
-                SetBit(_p, StatusBits::Negative, TestBit(value, 7));
+                set_bit(_p, StatusBits::Z, (_a & value) == 0);
+                set_bit(_p, StatusBits::V, get_bit(value, 6));
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
                 break;
             }
             case Opcode::BMI:
             {
-                if (TestBit(_p, StatusBits::Negative))
+                if (get_bit(_p, StatusBits::N))
                 {
                     _pc = address;
                 }
@@ -633,7 +698,7 @@ public:
             }
             case Opcode::BNE:
             {
-                if (!TestBit(_p, StatusBits::Zero))
+                if (!get_bit(_p, StatusBits::Z))
                 {
                     _pc = address;
                 }
@@ -641,15 +706,28 @@ public:
             }
             case Opcode::BPL:
             {
-                if (!TestBit(_p, StatusBits::Negative))
+                if (!get_bit(_p, StatusBits::N))
                 {
                     _pc = address;
                 }
                 break;
             }
+            case Opcode::BRK:
+            {
+                read(_pc++);
+                push(hi(_pc));
+                push(lo(_pc));
+                value = _p;
+                set_bit(value, StatusBits::B, 1);
+                set_bit(value, StatusBits::X, 1);
+                push(_p);
+                _pc = read_word(0xFFFE);
+                auto_step = false;
+                break;
+            }
             case Opcode::BVC:
             {
-                if (!TestBit(_p, StatusBits::Overflow))
+                if (!get_bit(_p, StatusBits::V))
                 {
                     _pc = address;
                 }
@@ -657,7 +735,7 @@ public:
             }
             case Opcode::BVS:
             {
-                if (TestBit(_p, StatusBits::Overflow))
+                if (get_bit(_p, StatusBits::V))
                 {
                     _pc = address;
                 }
@@ -665,20 +743,79 @@ public:
             }
             case Opcode::CLC:
             {
-                SetBit(_p, StatusBits::Carry, false);
+                set_bit(_p, StatusBits::C, 0);
                 break;
             }
             case Opcode::CLD:
             {
-                SetBit(_p, StatusBits::Decimal, false);
+                set_bit(_p, StatusBits::D, 0);
+                break;
+            }
+            case Opcode::CLI:
+            {
+                set_bit(_p, StatusBits::I, 0);
+                // Interrupts are level triggered so if /IRQ is low an interrupt will occur as soon as CLI executes
+                break;
+            }
+            case Opcode::CLV:
+            {
+                set_bit(_p, StatusBits::V, 0);
                 break;
             }
             case Opcode::CMP:
             {
-                value = _a - read(address);
-                SetBit(_p, StatusBits::Carry, value >= 0);
-                SetBit(_p, StatusBits::Zero, value == 0);
-                SetBit(_p, StatusBits::Negative, TestBit(value, 7));
+                cmp(_a);
+                break;
+            }
+            case Opcode::CPX:
+            {
+                cmp(_x);
+                break;
+            }
+            case Opcode::CPY:
+            {
+                cmp(_y);
+                break;
+            }
+            case Opcode::DEC:
+            {
+                value = read(address);
+                decrement(value);
+                write(address, value);
+                break;
+            }
+            case Opcode::DEX:
+            {
+                decrement(_x);
+                break;
+            }
+            case Opcode::DEY:
+            {
+                decrement(_y);
+                break;
+            }
+            case Opcode::EOR:
+            {
+                value = read(address);
+                value = _a ^ value;
+                load_register(_a);
+                break;
+            }
+            case Opcode::INC:
+            {
+                value = read(address);
+                increment(value);
+                write(address, value);
+                break;
+            }
+            case Opcode::INX:
+            {
+                increment(_x);
+                break;
+            }
+            case Opcode::INY:
+            {
+                increment(_y);
                 break;
             }
             case Opcode::JMP:
@@ -711,8 +848,42 @@ public:
                 load_register(_y);
                 break;
             }
+            case Opcode::LSR:
+            {
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    value = _a;
+                }
+                else
+                {
+                    value = read(address);
+                }
+
+                set_bit(_p, StatusBits::C, get_bit(value, 0));
+                value >>= 1;
+                set_bit(_p, StatusBits::Z, value == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    _a = value;
+                }
+                else
+                {
+                    write(address, value);
+                }
+
+                break;
+            }
             case Opcode::NOP:
             {
+                break;
+            }
+            case Opcode::ORA:
+            {
+                value = read(address);
+                value = _a | value;
+                load_register(_a);
                 break;
             }
             case Opcode::PHA:
@@ -722,6 +893,9 @@ public:
             }
             case Opcode::PHP:
             {
+                value = _p;
+                set_bit(_p, StatusBits::B, 1);
+                set_bit(_p, StatusBits::X, 1);
                 push(_p);
                 break;
             }
@@ -733,7 +907,79 @@ public:
             }
             case Opcode::PLP:
             {
-                _p = pop();
+                value = pop();
+                set_bit(value, StatusBits::B, 0);
+                set_bit(value, StatusBits::X, 0);
+                _p = value;
+                break;
+            }
+            case Opcode::ROL:
+            {
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    value = _a;
+                }
+                else
+                {
+                    value = read(address);
+                }
+
+                int c = get_bit(value, 7);
+                value <<= 1;
+                set_bit(value, 0, get_bit(_p, StatusBits::C));
+                set_bit(_p, StatusBits::C, c);
+                set_bit(_p, StatusBits::Z, value == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    _a = value;
+                }
+                else
+                {
+                    write(address, value);
+                }
+
+                break;
+            }
+            case Opcode::ROR:
+            {
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    value = _a;
+                }
+                else
+                {
+                    value = read(address);
+                }
+
+                int c = get_bit(value, 0);
+                value >>= 1;
+                set_bit(value, 7, get_bit(_p, StatusBits::C));
+                set_bit(_p, StatusBits::C, c);
+                set_bit(_p, StatusBits::Z, value == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+
+                if (instruction.addressing_mode == AddressingMode::Implied)
+                {
+                    _a = value;
+                }
+                else
+                {
+                    write(address, value);
+                }
+
+                break;
+            }
+            case Opcode::RTI:
+            {
+                value = pop();
+                set_bit(value, StatusBits::B, 0);
+                set_bit(value, StatusBits::X, 0);
+                _p = value;
+                uint8_t lo = pop();
+                uint8_t hi = pop();
+                _pc = make_word(lo, hi);
                 break;
             }
             case Opcode::RTS:
@@ -743,19 +989,25 @@ public:
                 _pc = make_word(lo, hi) + 1;
                 break;
             }
+            case Opcode::SBC:
+            {
+                value = read(address) ^ 0xFF;
+                adc();
+                break;
+            }
             case Opcode::SEC:
             {
-                SetBit(_p, StatusBits::Carry, true);
+                set_bit(_p, StatusBits::C, 1);
                 break;
             }
             case Opcode::SED:
             {
-                SetBit(_p, StatusBits::Decimal, true);
+                set_bit(_p, StatusBits::D, 1);
                 break;
             }
             case Opcode::SEI:
             {
-                SetBit(_p, StatusBits::InterruptDisable, true);
+                set_bit(_p, StatusBits::I, 1);
                 break;
             }
             case Opcode::STA:
@@ -773,10 +1025,130 @@ public:
                 write(address, _y);
                 break;
             }
+            case Opcode::TAX:
+            {
+                value = _a;
+                load_register(_x);
+                break;
+            }
+            case Opcode::TAY:
+            {
+                value = _a;
+                load_register(_y);
+                break;
+            }
+            case Opcode::TSX:
+            {
+                value = _s;
+                load_register(_x);
+                break;
+            }
+            case Opcode::TXA:
+            {
+                value = _x;
+                load_register(_a);
+                break;
+            }
+            case Opcode::TXS:
+            {
+                _s = _x;
+                break;
+            }
+            case Opcode::TYA:
+            {
+                value = _y;
+                load_register(_a);
+                break;
+            }
+
+            // Unofficial opcodes
+            case Opcode::DCP:
+            {
+                value = read(address);
+                decrement(value);
+                write(address, value);
+                set_bit(_p, StatusBits::C, _a >= value);
+                set_bit(_p, StatusBits::Z, _a == value);
+                set_bit(_p, StatusBits::N, get_bit(_a - value, 7));
+                break;
+            }
+            case Opcode::ISC:
+            {
+                value = read(address);
+                increment(value);
+                write(address, value);
+                value ^= 0xFF;
+                adc();
+                break;
+            }
+            case Opcode::LAX:
+            {
+                value = read(address);
+                load_register(_a);
+                load_register(_x);
+                break;
+            }
+            case Opcode::RLA:
+            {
+                value = read(address);
+                int c = get_bit(value, 7);
+                value <<= 1;
+                set_bit(value, 0, get_bit(_p, StatusBits::C));
+                set_bit(_p, StatusBits::C, c);
+                set_bit(_p, StatusBits::Z, value == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+                write(address, value);
+                value = _a & value;
+                load_register(_a);
+                break;
+            }
+            case Opcode::RRA:
+            {
+                value = read(address);
+                int c = get_bit(value, 0);
+                value >>= 1;
+                set_bit(value, 7, get_bit(_p, StatusBits::C));
+                set_bit(_p, StatusBits::C, c);
+                set_bit(_p, StatusBits::Z, value == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+                write(address, value);
+                adc();
+                break;
+            }
+            case Opcode::SAX:
+            {
+                value = _a & _x;
+                write(address, value);
+                break;
+            }
+            case Opcode::SLO:
+            {
+                value = read(address);
+                set_bit(_p, StatusBits::C, get_bit(value, 7));
+                value <<= 1;
+                set_bit(_p, StatusBits::Z, _a == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+                write(address, value);
+                value = _a | value;
+                load_register(_a);
+                break;
+            }
+            case Opcode::SRE:
+            {
+                value = read(address);
+                set_bit(_p, StatusBits::C, get_bit(value, 0));
+                value >>= 1;
+                set_bit(_p, StatusBits::Z, value == 0);
+                set_bit(_p, StatusBits::N, get_bit(value, 7));
+                write(address, value);
+                value = _a ^ value;
+                load_register(_a);
+                break;
+            }
             default:
             {
-                // illegal instruction, panic!
-                _stopped = true;
+                // illegal instruction, treat as nop
+                //_stopped = true;
                 break;
             }
         }
@@ -784,12 +1156,17 @@ public:
 
     void step()
     {
-        uint8_t opcode = read(_pc++);
-
         if (_stopped)
         {
             return;
         }
+
+        std::string dissassembly = disassemble(_pc);
+        char log[1024];
+        std::snprintf(log, 1024, "%04X %-31s A:%02X X:%02X Y:%02X P:%02X SP:%02X\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s);
+        OutputDebugStringA(log);
+
+        uint8_t opcode = read(_pc++);
 
         if (opcode > sizeof(InstructionTable) / sizeof(InstructionTable[0]))
         {
@@ -978,6 +1355,8 @@ public:
     }
 
     uint16_t mem_offs = 0x0;
+    bool auto_step = false;
+    float next_step = 0.0f;
 
     bool on_update(float delta) override
     {
@@ -992,11 +1371,39 @@ public:
 
         if (m_keys[VK_F5].pressed)
         {
-            reset(false);
+            auto_step = !auto_step;
+            next_step = 0.0f;
         }
         else if (m_keys[VK_F10].pressed)
         {
-            step();
+            if (!auto_step)
+            {
+                step();
+            }
+        }
+        else if (m_keys[VK_OEM_3].pressed)
+        {
+            auto_step = false;
+            reset(false);
+        }
+
+        if (auto_step)
+        {
+            if (1)//m_keys[VK_SPACE].down)
+            {
+                next_step = 0.0f;
+                step();
+            }
+            else
+            {
+                next_step += delta;
+
+                if (next_step >= 0.125f)
+                {
+                    next_step -= 0.125f;
+                    step();
+                }
+            }
         }
 
         clear_screen(0x3f);
@@ -1028,7 +1435,7 @@ public:
         int ram_dump_x = 16 + (DisplayWidth * 2) + 16;
         int ram_dump_y = 16;
         int ram_dump_w = InspectorWidth;
-        int ram_dump_h = 8 + 24 * vga9_glyph_height + 8;
+        int ram_dump_h = 8 + 32 * vga9_glyph_height + 8;
 
         fill_rect(ram_dump_x, ram_dump_y, ram_dump_w, ram_dump_h, 2, 2, 0x20);
 
@@ -1036,7 +1443,7 @@ public:
         int mem_x = ram_dump_x + 8;
         uint16_t mem_ptr = mem_offs;
 
-        for (int i = 0; i < 24; ++i)
+        for (int i = 0; i < 32; ++i)
         {
             uint8_t memp[16];
             char memc[16];
