@@ -20,13 +20,16 @@ public:
     int window_width;
     int window_height;
 
+
     virtual ~Vgfw() = default;
+
 
     virtual bool on_create() = 0;
     virtual void on_destroy() = 0;
     virtual bool on_update(float delta) = 0;
 
-    bool initialize(const wchar_t* name, int screen_width_ = 320, int screen_height_ = 240, int window_scale = 2)
+
+    bool initialize(const wchar_t* name, int screen_width_, int screen_height_, int window_scale)
     {
         m_title = _wcsdup(name);
 
@@ -112,6 +115,7 @@ public:
         return true;
     }
 
+
     void run()
     {
         if (!on_create())
@@ -192,7 +196,12 @@ public:
         shutdown();
     }
 
-    void quit() { PostQuitMessage(0); }
+
+    void quit()
+    {
+        PostQuitMessage(0);
+    }
+
 
     void set_pixel(int x, int y, uint8_t p)
     {
@@ -202,6 +211,7 @@ public:
             backbuffer[x + y * screen_width] = p;
         }
     }
+
 
     uint8_t get_pixel(int x, int y)
     {
@@ -216,6 +226,7 @@ public:
         return p;
     }
 
+
     void set_palette(uint32_t rgbx[256])
     {
         for (int p = 0; p < 256; ++p)
@@ -228,6 +239,7 @@ public:
         }
     }
 
+
     void set_palette(uint8_t* palette)
     {
         for (int p = 0; p < 256; ++p)
@@ -239,6 +251,7 @@ public:
             m_palette[p] = entry;
         }
     }
+
 
     void load_palette(const std::string& path)
     {
@@ -254,12 +267,14 @@ public:
         set_palette(palette);
     }
 
+
     void clear_screen(uint8_t c)
     {
         uint8_t* backbuffer = m_framebuffer[m_frontbuffer ^ 1];
         size_t buffer_size = size_t(screen_width) * size_t(screen_height);
         memset(backbuffer, c, buffer_size);
     }
+
 
     void draw_line(int x1, int y1, int x2, int y2, uint8_t c)
     {
@@ -308,6 +323,7 @@ public:
         }
     }
 
+
     void draw_char(int x, int y, char c, const int* glyphs, int w, int h, uint8_t fg, uint8_t bg)
     {
         uint8_t colors[2] = { bg, fg };
@@ -321,6 +337,7 @@ public:
             }
         }
     }
+
 
     void draw_string(int x, int y, const char* str, const int* glyphs, int w, int h, uint8_t fg, uint8_t bg)
     {
@@ -341,6 +358,7 @@ public:
             x += w;
         }
     }
+
 
     void format_string(int x, int y, const int* glyphs, int w, int h, uint8_t fg, uint8_t bg, const char* fmt, ...)
     {
@@ -365,6 +383,7 @@ public:
         _freea(buf);
     }
 
+
     void draw_rect(int x, int y, int w, int h, uint8_t c)
     {
         for (int px = 0; px < w; ++px)
@@ -380,6 +399,7 @@ public:
         }
     }
 
+
     void fill_rect(int x, int y, int w, int h, int bw, uint8_t fg, uint8_t bg)
     {
         uint8_t colors[2] = { fg, bg };
@@ -394,6 +414,58 @@ public:
         }
     }
 
+
+    void copy_rect(int x, int y, int w, int h, const uint8_t* src, uint32_t stride)
+    {
+        uint8_t* backbuffer = m_framebuffer[m_frontbuffer ^ 1];
+        uint8_t* dest = backbuffer + x + y * screen_width;
+
+        x = (x + w < screen_width) ? x : (screen_width - x);
+        
+        if (x <= 0)
+            return;
+
+        y = (y + h < screen_height) ? y : (screen_height - y);
+
+        if (y <= 0)
+            return;
+
+        for (int y = 0; y < h; ++y)
+        {
+            memcpy(dest, src, w);
+            dest += screen_width;
+            src += stride;
+        }
+    }
+
+
+    void copy_rect_scaled(int x, int y, int w, int h, const uint8_t* src, uint32_t stride, int pixel_scale)
+    {
+        uint8_t* backbuffer = m_framebuffer[m_frontbuffer ^ 1];
+        uint8_t* dest = backbuffer + x + y * screen_width;
+
+        x = (x + w < screen_width) ? x : (screen_width - x);
+
+        if (x <= 0)
+            return;
+
+        y = (y + h < screen_height) ? y : (screen_height - y);
+
+        if (y <= 0)
+            return;
+
+        for (int y = 0; y < h; ++y)
+        {
+            for (int x = 0; x < w; ++x)
+            {
+                dest[x] = src[(x / pixel_scale) + ((y / pixel_scale) * stride)];
+            }
+
+            dest += screen_width;
+        }
+    }
+
+
 protected:
     struct KeyState
     {
@@ -402,7 +474,9 @@ protected:
         bool down;
     };
 
+
     KeyState m_keys[256] = {};
+
 
 private:
     void shutdown()
@@ -422,6 +496,7 @@ private:
         free(m_title);
     }
 
+
     LRESULT on_paint()
     {
         PAINTSTRUCT ps = {};
@@ -438,6 +513,7 @@ private:
         bmi->bmiHeader.biPlanes = 1;
         memcpy(bmi->bmiColors, m_palette, 256 * sizeof(RGBQUAD));
 #else
+        // True colour
         char bmi_memory[sizeof(BITMAPINFO)];
         BITMAPINFO* bmi = (BITMAPINFO*)bmi_memory;
         ZeroMemory(bmi, sizeof(BITMAPINFO));
@@ -466,6 +542,7 @@ private:
         return (LRESULT)0;
     }
 
+
     static LRESULT CALLBACK window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     {
         Vgfw* vgfw = (Vgfw*)GetProp(hwnd, L"Vgfw");
@@ -485,6 +562,7 @@ private:
 
         return DefWindowProc(hwnd, msg, wparam, lparam);
     }
+
 
     const wchar_t* m_classname = L"Vgfw";
 

@@ -1,10 +1,11 @@
 #include "vgfw.h"
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <vector>
 
-#include "gli2C02.h"
+#include "gli2a03.h"
 #include "vga9.h"
 
 class Cartridge
@@ -64,7 +65,12 @@ public:
 
     uint8_t cpu_read(uint16_t addr)
     {
-        if (addr >= 0x8000)
+        if (addr >= 0x6000 && addr < 0x8000)
+        {
+            addr &= 0x1FFF;
+            return _prg_ram[addr];
+        }
+        else if (addr >= 0x8000)
         {
             addr &= (_prg_rom.size() - 1);
             return _prg_rom[addr];
@@ -75,11 +81,18 @@ public:
 
     void cpu_write(uint16_t addr, uint8_t val)
     {
-
+        if (addr >= 0x6000 && addr < 0x8000)
+        {
+            addr &= 0x1FFF;
+            _prg_ram[addr] = val;
+        }
     }
 
     char _header[16]{};
     std::vector<uint8_t> _prg_rom;
+
+    // FIXME: Mapper.. this is just to run blargg's tests for now
+    std::array<uint8_t, 8 * 1024> _prg_ram;
 };
 
 class GliNes : public Vgfw
@@ -94,17 +107,6 @@ public:
     static constexpr int WindowWidth = 16 + (DisplayWidth * 2) + 16 + InspectorWidth + 16;
     static constexpr int WindowHeight = 16 + std::max(DisplayHeight * 2, InspectorHeight) + 16;
 
-    enum MemoryMap
-    {
-        RAM_BASE        = 0x0000,
-        RAM_TOP         = 0x1FFF,
-        PPU_REG_BASE    = 0x2000,
-        PPU_REG_TOP     = 0x3FFF,
-        APU_IO_BASE     = 0x4000,
-        APU_IO_TOP      = 0x401F,
-        CART_BASE       = 0x4020,
-        MEM_TOP         = 0xFFFF
-    };
 
     bool on_create() override
     {
@@ -113,18 +115,31 @@ public:
         return true;
     }
 
+
     void on_destroy() override
     {
 
     }
 
-    gli2C02 _cpu;
-    std::shared_ptr<Cartridge> _cart;
 
-    // RAM
+    gli2A03 _cpu;
+    std::shared_ptr<Cartridge> _cart;
     uint8_t _ram[2 * 1024];
 
     // Bus
+    enum MemoryMap
+    {
+        RAM_BASE = 0x0000,
+        RAM_TOP = 0x1FFF,
+        PPU_REG_BASE = 0x2000,
+        PPU_REG_TOP = 0x3FFF,
+        APU_IO_BASE = 0x4000,
+        APU_IO_TOP = 0x401F,
+        CART_BASE = 0x4020,
+        MEM_TOP = 0xFFFF
+    };
+
+
     uint8_t read(uint16_t addr)
     {
         if (addr < RAM_TOP + 1)
@@ -147,9 +162,9 @@ public:
         return 0;
     }
 
+
     void write(uint16_t addr, uint8_t val)
     {
-        _ram[addr] = val;
         if (addr < RAM_TOP + 1)
         {
             _ram[addr & 0x7FF] = val;
@@ -168,13 +183,30 @@ public:
         }
     }
 
-    // System reset
+
+    // System
+    uint32_t _system_clock = 0;
+
+
     void reset(bool coldstart)
     {
         _cpu.reset(true);
         _cpu._pc = 0xC000;   // nestest ROM autorun start address
         auto_step = false;
+        _system_clock = 0;
     }
+
+
+    void clock()
+    {
+        _system_clock++;
+
+        if ((_system_clock % 3) == 0)
+        {
+            _cpu.clock();
+        }
+    }
+
 
     // Cart
     bool load_cartridge(const std::string& path)
@@ -204,38 +236,44 @@ public:
             mem_offs -= 32 * 16;
         }
 
-        if (m_keys[VK_F5].pressed)
-        {
-            auto_step = !auto_step;
-            next_step = 0.0f;
-        }
-        else if (m_keys[VK_F10].pressed)
-        {
-            if (!auto_step)
-            {
-                _cpu.step();
-            }
-        }
-        else if (m_keys[VK_OEM_3].pressed)
+        if (m_keys[VK_OEM_3].pressed)
         {
             reset(false);
         }
-
-        if (auto_step)
+        else
         {
-            if (m_keys[VK_SPACE].down)
+            if (m_keys[VK_F5].pressed)
+            {
+                auto_step = !auto_step;
+                next_step = 0.0f;
+            }
+
+            if (m_keys[VK_SPACE].pressed)
             {
                 next_step = 0.0f;
-                _cpu.step();
             }
-            else
+
+            if (auto_step)
+            {
+                clock();
+            }
+            else if (m_keys[VK_F10].pressed)
+            {
+                uint16_t pc = _cpu._pc;
+
+                do
+                {
+                    clock();
+                } while (!_cpu._stopped && (_cpu._pc == pc));
+            }
+            else if (m_keys[VK_SPACE].down)
             {
                 next_step += delta;
 
-                if (next_step >= 0.1f)
+                if (next_step >= 0.25f)
                 {
-                    next_step -= 0.1f;
-                    _cpu.step();
+                    next_step -= 0.25f;
+                    clock();
                 }
             }
         }
@@ -243,13 +281,18 @@ public:
         clear_screen(0x3F);
 
         // TV display
-        for (int i = -1; i <= 1; ++i)
+        std::array<uint8_t, 256 * 256> pixels;
+
+        for (uint8_t& p : pixels)
         {
-            draw_rect(16 + i, 16 + i, (DisplayWidth - i) * 2, (DisplayHeight - i) * 2, 2);
+            int r = rand();
+            p = (r & 0x0000A000) ? 0x3D : ((r & 0x00000005) ? 0x2D : 0x0F);
         }
 
+        copy_rect_scaled(16, 16, 512, 512, pixels.data(), 256, 2);
+
         // Palette
-        int pal_y = 16 + (DisplayHeight * 2) + 16;
+        int pal_y = 16 + 512 + 16;
 
         for (int i = 0; i < 4; ++i)
         {
@@ -337,6 +380,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
 
     nes.load_palette("ntscpalette.pal");
     nes.load_cartridge(R"(D:\EMU\nes\nestest.nes)");
+    //nes.load_cartridge(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
+    //nes.load_cartridge(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
     nes.run();
 
     return 0;

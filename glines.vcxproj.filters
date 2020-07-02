@@ -21,7 +21,7 @@
     <ClInclude Include="vga9.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gli2C02.h">
+    <ClInclude Include="gli2a03.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -29,7 +29,7 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gli2C02.cpp">
+    <ClCompile Include="gli2a03.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
