@@ -4,8 +4,6 @@
 #include <functional>
 #include <string>
 
-struct Instruction;
-
 class gli2A03
 {
 public:
@@ -20,7 +18,7 @@ public:
     void reset(bool coldstart);
     void clock();
     void step();
-    bool busy() { return !_stopped && (_cycles_remaining > 0); }
+    bool busy() { return !_stopped && (_instruction_cycles_remaining > 0); }
 
     std::string disassemble(uint16_t addr);
 
@@ -36,8 +34,9 @@ private:
     ReadCallback read;
     WriteCallback write;
 
-    uint8_t _cycles_remaining;
-    const Instruction* _instruction;
+    uint8_t _ir;
+    uint8_t _instruction_cycles_remaining;
+    uint64_t _cycle_counter;
 
     uint16_t read_word(uint16_t addr);
     void push(uint8_t value);

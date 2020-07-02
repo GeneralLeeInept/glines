@@ -1,5 +1,9 @@
 #include "gli2A03.h"
 
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <Windows.h>
+
 // Addressing mode - high bit set means instructions which load across a page boundary using the addressing mode will incur a 1-cycle penalty.
 // Instruction length (in bytes) is determined by addressing mode
 enum AddressingMode : uint8_t
@@ -184,7 +188,7 @@ static const Instruction InstructionTable[] =
     { "EOR", Opcode::EOR, AddressingMode::Indirect_X,    0x06 },    // 41
     { "STP", Opcode::STP, AddressingMode::Implied,       0x00 },    // 42
     { "SRE", Opcode::SRE, AddressingMode::Indirect_X,    0x08 },    // 43
-    { "NOP", Opcode::NOP, AddressingMode::ZeroPage,      0x02 },    // 44
+    { "NOP", Opcode::NOP, AddressingMode::ZeroPage,      0x03 },    // 44
     { "EOR", Opcode::EOR, AddressingMode::ZeroPage,      0x03 },    // 45
     { "LSR", Opcode::LSR, AddressingMode::ZeroPage,      0x05 },    // 46
     { "SRE", Opcode::SRE, AddressingMode::ZeroPage,      0x05 },    // 47
@@ -249,7 +253,7 @@ static const Instruction InstructionTable[] =
     { "NOP", Opcode::NOP, AddressingMode::Immediate,     0x02 },    // 80
     { "STA", Opcode::STA, AddressingMode::Indirect_X,    0x06 },    // 81
     { "NOP", Opcode::NOP, AddressingMode::Immediate,     0x02 },    // 82
-    { "SAX", Opcode::SAX, AddressingMode::Indirect_X,    0x02 },    // 83
+    { "SAX", Opcode::SAX, AddressingMode::Indirect_X,    0x06 },    // 83
     { "STY", Opcode::STY, AddressingMode::ZeroPage,      0x03 },    // 84
     { "STA", Opcode::STA, AddressingMode::ZeroPage,      0x03 },    // 85
     { "STX", Opcode::STX, AddressingMode::ZeroPage,      0x03 },    // 86
@@ -386,8 +390,8 @@ enum StatusBits : uint8_t
     Z = 1,
     I = 2,
     D = 3,
-    B = 4,  // Never held in process status register
-    X = 5,  // Never held in process status register
+    B = 4,
+    X = 5,
     V = 6,
     N = 7
 };
@@ -442,7 +446,7 @@ void gli2A03::reset(bool coldstart)
     if (coldstart)
     {
         // https://wiki.nesdev.com/w/index.php/CPU_ALL#At_power-up
-        _p = 0x24;
+        _p = 0x34;
         _a = _x = _y = 0;
         _s = 0xfd;
     }
@@ -453,26 +457,32 @@ void gli2A03::reset(bool coldstart)
         _p |= 0x4;
     }
 
-    _cycles_remaining = 6;
+    _cycle_counter = 0;
+    _instruction_cycles_remaining = 6;
 }
 
 
 void gli2A03::clock()
 {
-    if (_cycles_remaining)
+    if (!_stopped)
     {
-        --_cycles_remaining;
-    }
-    else if (!_stopped)
-    {
-        // Fetch, decode & execute the next instruction
-        uint8_t opcode = read(_pc++);
-        _instruction = &InstructionTable[opcode];
-        _cycles_remaining = _instruction->cycles & 0x7F;  // Mask off high bit
-        exec();
+        ++_cycle_counter;
+
+        if (!_instruction_cycles_remaining)
+        {
+            char log[128];
+            std::string dissassembly = disassemble(_pc);
+            snprintf(log, 128, "%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s, _cycle_counter);
+            OutputDebugStringA(log);
+
+            // Fetch, decode & execute the next instruction
+            _ir = read(_pc++);
+            exec();
+        }
+
+        --_instruction_cycles_remaining;
     }
 }
-
 
 void gli2A03::step()
 {
@@ -481,12 +491,12 @@ void gli2A03::step()
         return;
     }
 
-    if (!_cycles_remaining)
+    if (!_instruction_cycles_remaining)
     {
         clock();
     }
 
-    while (_cycles_remaining)
+    while (_instruction_cycles_remaining)
     {
         clock();
     }
@@ -515,10 +525,13 @@ uint8_t gli2A03::pop()
 
 void gli2A03::exec()
 {
+    const Instruction& instruction = InstructionTable[_ir];
     uint16_t address = 0xd1ed;
-    bool page_crossing_penalty = !!get_bit(_instruction->cycles & _instruction->addressing_mode, 7);
+    bool page_crossing_penalty = !!get_bit(instruction.cycles & instruction.addressing_mode, 7);
 
-    switch (_instruction->addressing_mode)
+    _instruction_cycles_remaining = instruction.cycles & 0x7F;  // Mask off high bit
+
+    switch (instruction.addressing_mode)
     {
         case Implied:
         {
@@ -563,7 +576,7 @@ void gli2A03::exec()
 
             if (page_crossing_penalty && hi(address) != hi(absolute_address))
             {
-                ++_cycles_remaining;
+                ++_instruction_cycles_remaining;
             }
 
             break;
@@ -576,7 +589,7 @@ void gli2A03::exec()
 
             if (page_crossing_penalty && hi(address) != hi(absolute_address))
             {
-                ++_cycles_remaining;
+                ++_instruction_cycles_remaining;
             }
 
             break;
@@ -607,7 +620,7 @@ void gli2A03::exec()
 
             if (page_crossing_penalty && hi(address) != address_hi)
             {
-                ++_cycles_remaining;
+                ++_instruction_cycles_remaining;
             }
 
             break;
@@ -655,7 +668,7 @@ void gli2A03::exec()
         set_bit(_p, StatusBits::N, get_bit(reg - value, 7));
     };
 
-    switch (_instruction->opcode)
+    switch (instruction.opcode)
     {
         case Opcode::ADC:
         {
@@ -671,7 +684,7 @@ void gli2A03::exec()
         }
         case Opcode::ASL:
         {
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 value = _a;
             }
@@ -683,7 +696,7 @@ void gli2A03::exec()
             set_bit(_p, StatusBits::C, get_bit(value, 7));
             value <<= 1;
 
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 load_register(_a);
             }
@@ -699,7 +712,7 @@ void gli2A03::exec()
         {
             if (!get_bit(_p, StatusBits::C))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -708,7 +721,7 @@ void gli2A03::exec()
         {
             if (get_bit(_p, StatusBits::C))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -717,7 +730,7 @@ void gli2A03::exec()
         {
             if (get_bit(_p, StatusBits::Z))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -734,7 +747,7 @@ void gli2A03::exec()
         {
             if (get_bit(_p, StatusBits::N))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -743,7 +756,7 @@ void gli2A03::exec()
         {
             if (!get_bit(_p, StatusBits::Z))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -752,7 +765,7 @@ void gli2A03::exec()
         {
             if (!get_bit(_p, StatusBits::N))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -774,7 +787,7 @@ void gli2A03::exec()
         {
             if (!get_bit(_p, StatusBits::V))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -783,7 +796,7 @@ void gli2A03::exec()
         {
             if (get_bit(_p, StatusBits::V))
             {
-                _cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
+                _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
             }
             break;
@@ -896,7 +909,7 @@ void gli2A03::exec()
         }
         case Opcode::LSR:
         {
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 value = _a;
             }
@@ -910,7 +923,7 @@ void gli2A03::exec()
             set_bit(_p, StatusBits::Z, value == 0);
             set_bit(_p, StatusBits::N, get_bit(value, 7));
 
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 _a = value;
             }
@@ -940,9 +953,9 @@ void gli2A03::exec()
         case Opcode::PHP:
         {
             value = _p;
-            set_bit(_p, StatusBits::B, 1);
-            set_bit(_p, StatusBits::X, 1);
-            push(_p);
+            set_bit(value, StatusBits::B, 1);
+            set_bit(value, StatusBits::X, 1);
+            push(value);
             break;
         }
         case Opcode::PLA:
@@ -961,7 +974,7 @@ void gli2A03::exec()
         }
         case Opcode::ROL:
         {
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 value = _a;
             }
@@ -977,7 +990,7 @@ void gli2A03::exec()
             set_bit(_p, StatusBits::Z, value == 0);
             set_bit(_p, StatusBits::N, get_bit(value, 7));
 
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 _a = value;
             }
@@ -990,7 +1003,7 @@ void gli2A03::exec()
         }
         case Opcode::ROR:
         {
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 value = _a;
             }
@@ -1006,7 +1019,7 @@ void gli2A03::exec()
             set_bit(_p, StatusBits::Z, value == 0);
             set_bit(_p, StatusBits::N, get_bit(value, 7));
 
-            if (_instruction->addressing_mode == AddressingMode::Implied)
+            if (instruction.addressing_mode == AddressingMode::Implied)
             {
                 _a = value;
             }
@@ -1213,108 +1226,125 @@ std::string gli2A03::disassemble(uint16_t addr)
     const Instruction& instruction = InstructionTable[opcode];
 
     const char* format = "";
-    uint16_t operand = 0;
-    int opbytes = 0;
+    uint8_t opbytes[2]{};
+    uint8_t len;
+    uint16_t operand;
 
     switch (instruction.addressing_mode)
     {
         case Implied:       // 1 byte
         {
-            format = "%02X         %s";
+            format = "%02X        %s";
+            len = 1;
             break;
         }
         case Immediate:     // 2 bytes
         {
-            format = "%02X %02X      %s   #$%02X";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s #$%02X";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0];
+            len = 2;
             break;
         }
         case ZeroPage:      // 2 bytes
         {
-            format = "%02X %02X      %s   $%02X";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s $%02X";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0];
+            len = 2;
             break;
         }
         case ZeroPage_X:    // 2 bytes
         {
-            format = "%02X %02X      %s   $%02x,X";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s $%02x,X";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0];
+            len = 2;
             break;
         }
         case ZeroPage_Y:    // 2 bytes
         {
-            format = "%02X %02X      %s   $%02X,Y";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s $%02X,Y";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0];
+            len = 2;
             break;
         }
         case Relative:      // 2 bytes
         {
-            format = "%02X %02X      %s   *+$%02X";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s $%04X";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0] + (int16_t)(addr + 2);
+            len = 2;
             break;
         }
         case Absolute:      // 3 bytes
         {
-            format = "%02X %02X %02X   %s   $%04X";
-            operand = read_word(addr + 1);
-            opbytes = 2;
+            format = "%02X %02X %02X  %s $%04X";
+            opbytes[0] = read(addr + 1);
+            opbytes[1] = read(addr + 2);
+            operand = make_word(opbytes[0], opbytes[1]);
+            len = 3;
             break;
         }
         case Absolute_X:      // 3 bytes
         {
-            format = "%02X %02X %02X   %s   $%04X,X";
-            operand = read_word(addr + 1);
-            opbytes = 2;
+            format = "%02X %02X %02X  %s $%04X,X";
+            opbytes[0] = read(addr + 1);
+            opbytes[1] = read(addr + 2);
+            operand = make_word(opbytes[0], opbytes[1]);
+            len = 3;
             break;
         }
         case Absolute_Y:      // 3 bytes
         {
-            format = "%02X %02X %02X   %s   $%04X,Y";
-            operand = read_word(addr + 1);
-            opbytes = 2;
+            format = "%02X %02X %02X  %s $%04X,Y";
+            opbytes[0] = read(addr + 1);
+            opbytes[1] = read(addr + 2);
+            operand = make_word(opbytes[0], opbytes[1]);
+            len = 3;
             break;
         }
         case Indirect:      // (Indirect) 3 bytes
         {
-            format = "%02X %02X %02X   %s   ($%04X)";
-            operand = read_word(addr + 1);
-            opbytes = 2;
+            format = "%02X %02X %02X  %s ($%04X)";
+            opbytes[0] = read(addr + 1);
+            opbytes[1] = read(addr + 2);
+            operand = make_word(opbytes[0], opbytes[1]);
+            len = 3;
             break;
         }
         case Indirect_X:      // (Indirect,X) 2 bytes
         {
-            format = "%02X %02X      %s   ($%02X,X)";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s ($%02X,X)";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0];
+            len = 2;
             break;
         }
         case Indirect_Y:      // (Indirect),Y 2 bytes
         {
-            format = "%02X %02X      %s   ($%02X),Y";
-            operand = read(addr + 1);
-            opbytes = 1;
+            format = "%02X %02X     %s ($%02X),Y";
+            opbytes[0] = read(addr + 1);
+            operand = opbytes[0];
+            len = 2;
             break;
         }
     }
 
     char buffer[256];
 
-    if (opbytes == 0)
+    if (len == 1)
     {
         std::snprintf(buffer, 256, format, opcode, instruction.mnemonic);
     }
-    else if (opbytes == 1)
+    else if (len == 2)
     {
-        std::snprintf(buffer, 256, format, opcode, lo(operand), instruction.mnemonic, lo(operand));
+        std::snprintf(buffer, 256, format, opcode, opbytes[0], instruction.mnemonic, operand);
     }
-    else if (opbytes == 2)
+    else if (len == 3)
     {
-        std::snprintf(buffer, 256, format, opcode, lo(operand), hi(operand), instruction.mnemonic, operand);
+        std::snprintf(buffer, 256, format, opcode, opbytes[0], opbytes[1], instruction.mnemonic, operand);
     }
 
     return std::string(buffer);

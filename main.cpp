@@ -227,6 +227,11 @@ public:
 
     bool on_update(float delta) override
     {
+        if ((m_keys[VK_LCONTROL].down || m_keys[VK_RCONTROL].down) && m_keys['Q'].pressed)
+        {
+            return false;
+        }
+
         if (m_keys[VK_NEXT].pressed)
         {
             mem_offs += 32 * 16;
@@ -255,7 +260,8 @@ public:
 
             if (auto_step)
             {
-                clock();
+                for (int i = 0; i < 335; ++i)   // ~1 frame
+                    clock();
             }
             else if (m_keys[VK_F10].pressed)
             {

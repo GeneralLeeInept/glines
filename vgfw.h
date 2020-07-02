@@ -9,6 +9,7 @@
 #include <iterator>
 #include <vector>
 
+#define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
 
@@ -181,7 +182,7 @@ public:
             // User update
             if (!on_update(delta))
             {
-                quit();
+                active = false;
             }
 
             // Present
@@ -189,17 +190,11 @@ public:
             InvalidateRect(m_hwnd, NULL, FALSE);
 
             // Check if Window closed
-            active = !!IsWindow(m_hwnd);
+            active = active && !!IsWindow(m_hwnd);
         }
 
         on_destroy();
         shutdown();
-    }
-
-
-    void quit()
-    {
-        PostQuitMessage(0);
     }
 
 
