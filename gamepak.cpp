@@ -1,5 +1,7 @@
 #include "gamepak.h"
 
+#include "bits.h"
+
 #include <fstream>
 
 
@@ -94,6 +96,194 @@ public:
     }
 };
 
+
+class Mapper_001 : public Mapper
+{
+public:
+    Mapper_001(GamePak& cartridge)
+        : Mapper(cartridge)
+    {
+        _prg_bank = 0;
+        _chr_bank_0 = 0;
+        reset();
+    }
+
+
+    void reset()    // TODO: Virtualize and expose to system reset
+    {
+        _load = 0x10;
+        _control = _control | 0x0C;
+
+        update_prg_rom_mapping();
+        update_chr_rom_mapping();
+    }
+
+
+    uint8_t cpu_read(uint16_t address) override
+    {
+        uint8_t value = 0;
+
+        if (address >= 0x6000 && address < 0x8000)
+        {
+            // TODO: Test PRG RAM chip enable? Per docs it is ignored on MMC1A
+            //if (get_bit(_prg_bank, 4) == 0)
+            uint16_t offset = address & 0x1FFF;
+            value = _prg_ram[offset];
+        }
+        else if (address >= 0x8000 && address < 0xC000)
+        {
+            uint16_t offset = address & 0x3FFF;
+            value = prg_rom()[_x8000 + offset];
+        }
+        else if (address >= 0xC000)
+        {
+            uint16_t offset = address & 0x3FFF;
+            value = prg_rom()[_xC000 + offset];
+        }
+
+        return value;
+    }
+
+
+    void cpu_write(uint16_t address, uint8_t value) override
+    {
+        if (address >= 0x6000 && address < 0x8000)
+        {
+            uint16_t offset = address & 0x1FFF;
+            _prg_ram[offset] = value;
+        }
+        else if (address >= 0x8000)
+        {
+            if (value & 0x80)
+            {
+                reset();
+            }
+            else
+            {
+                uint8_t execute = get_bit(_load, 0);
+                _load = (_load >> 1) | (get_bit(value, 0) << 4);
+
+                if (execute)
+                {
+                    uint8_t reg = (address >> 13) & 0x3;
+
+                    if (reg == 0)
+                    {
+                        _control = _load;
+                        update_prg_rom_mapping();
+                        update_chr_rom_mapping();
+                    }
+                    else if (reg == 1)
+                    {
+                        _chr_bank_0 = _load;
+                        update_chr_rom_mapping();
+                    }
+                    else if (reg == 2)
+                    {
+                        _chr_bank_1 = _load;
+                        update_chr_rom_mapping();
+                    }
+                    else if (reg == 3)
+                    {
+                        _prg_bank = _load;
+                        update_prg_rom_mapping();
+                    }
+
+                    _load = 0x10;
+                }
+            }
+        }
+    }
+
+
+    bool ppu_read(uint16_t address, uint8_t& value) override
+    {
+        if (address >= 0x0000 && address < 0x1000)
+        {
+            uint16_t offset = address & 0x0FFF;
+            value = chr_rom()[_x0000 + offset];
+            return true;
+        }
+        else if (address >= 0x1000 && address < 0x2000)
+        {
+            uint16_t offset = address & 0x0FFF;
+            value = prg_rom()[_x1000 + offset];
+            return true;
+        }
+
+        return false;
+    }
+
+
+    bool ppu_write(uint16_t address, uint8_t value) override
+    {
+        return false;
+    }
+
+
+    void update_prg_rom_mapping()
+    {
+        uint8_t prg_mode = (_control >> 2) & 3;
+
+        if (prg_mode < 2)
+        {
+            // Switch 32 KB at $8000, ignoring low bit of bank number
+            _x8000 = (_prg_bank & 0xE) * 0x8000;
+            _xC000 = _x8000 + 0x4000;
+        }
+        else if (prg_mode == 2)
+        {
+            // Fix first bank at $8000 and switch 16 KB bank at $C000
+            _x8000 = 0;
+            _xC000 = (_prg_bank & 0xE) * 0x4000;
+        }
+        else if (prg_mode == 3)
+        {
+            // Fix last bank at $C000 and switch 16 KB bank at $8000)
+            _x8000 = (_prg_bank & 0xE) * 0x4000;
+            _xC000 = (header()[4] - 1) * 0x4000;
+        }
+    }
+
+
+    void update_chr_rom_mapping()
+    {
+        if (get_bit(_control, 4) == 0)
+        {
+            // Switch 8KB at a time
+            _x0000 = (_chr_bank_0 & 0xE) * 0x1000;
+            _x1000 = _x0000 + 0x1000;
+        }
+        else
+        {
+            // Switch two separate 4KB banks
+            _x0000 = _chr_bank_0 * 0x1000;
+            _x1000 = _chr_bank_1 * 0x1000;
+        }
+    }
+
+
+    // PRG RAM
+    std::array<uint8_t, 0x2000> _prg_ram;
+
+
+    // Registers
+    uint8_t _load;
+    uint8_t _control;
+    uint8_t _chr_bank_0;
+    uint8_t _chr_bank_1;
+    uint8_t _prg_bank;
+
+
+    // PRG ROM mapping
+    uint16_t _x8000;
+    uint16_t _xC000;
+
+
+    // CHR ROM mapping
+    uint16_t _x0000;
+    uint16_t _x1000;
+};
 
 class Mapper_003 : public Mapper
 {
@@ -191,6 +381,12 @@ bool GamePak::load(const std::string& path)
         ifs.read((char*)(_prg_rom.data()), _prg_rom.size());
 
         // Read CHR ROM
+        if (header->chr_rom_size == 0)
+        {
+            // FIXME: Must have CHR RAM?
+            header->chr_rom_size = 0x10;
+        }
+
         _chr_rom.resize(header->chr_rom_size * size_t(0x2000));
         ifs.read((char*)(_chr_rom.data()), _chr_rom.size());
 
@@ -202,6 +398,11 @@ bool GamePak::load(const std::string& path)
             case 0:
             {
                 _mapper = std::make_shared<Mapper_000>(*this);
+                break;
+            }
+            case 1:
+            {
+                _mapper = std::make_shared<Mapper_001>(*this);
                 break;
             }
             case 3:
