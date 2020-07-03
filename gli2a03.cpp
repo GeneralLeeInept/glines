@@ -1,5 +1,7 @@
 #include "gli2A03.h"
 
+#include "bits.h"
+
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
@@ -397,40 +399,6 @@ enum StatusBits : uint8_t
 };
 
 
-template <typename T>
-void set_bit(T& flags, uint8_t bit, int set)
-{
-    T mask = T(1) << bit;
-    flags |= set ? mask : T(0);
-    flags &= set ? ~T(0) : ~mask;
-}
-
-
-template <typename T>
-int get_bit(T flags, uint8_t bit)
-{
-    return (flags >> bit) & 1;
-}
-
-
-inline uint8_t lo(uint16_t w)
-{
-    return (uint8_t)(w & 0xff);
-}
-
-
-inline uint8_t hi(uint16_t w)
-{
-    return (uint8_t)((w & 0xff00) >> 8);
-}
-
-
-inline uint16_t make_word(uint8_t lo, uint8_t hi)
-{
-    return (((uint16_t)hi) << 8) | lo;
-}
-
-
 void gli2A03::connect(ReadCallback read_callback, WriteCallback write_callback)
 {
     read = read_callback;
@@ -488,28 +456,10 @@ void gli2A03::clock()
     }
 }
 
-void gli2A03::step()
-{
-    if (_stopped)
-    {
-        return;
-    }
-
-    if (!_instruction_cycles_remaining)
-    {
-        clock();
-    }
-
-    while (_instruction_cycles_remaining)
-    {
-        clock();
-    }
-}
-
 
 uint16_t gli2A03::read_word(uint16_t addr)
 {
-    return make_word(read(addr), read(addr + 1));
+    return word(read(addr), read(addr + 1));
 }
 
 
@@ -603,24 +553,24 @@ void gli2A03::exec()
             uint16_t indirect_address = read_word(_pc);
             _pc += 2;
             uint8_t address_lo = read(indirect_address);
-            uint8_t address_hi = read(make_word(lo(indirect_address + 1), hi(indirect_address)));
-            address = make_word(address_lo, address_hi);
+            uint8_t address_hi = read(word(lo(indirect_address + 1), hi(indirect_address)));
+            address = word(address_lo, address_hi);
             break;
         }
         case Indirect_X:
         {
             uint16_t indirect_address = lo(read(_pc++) + _x);
             uint8_t address_lo = read(indirect_address);
-            uint8_t address_hi = read(make_word(lo(indirect_address + 1), hi(indirect_address)));
-            address = make_word(address_lo, address_hi);
+            uint8_t address_hi = read(word(lo(indirect_address + 1), hi(indirect_address)));
+            address = word(address_lo, address_hi);
             break;
         }
         case Indirect_Y:
         {
             uint16_t indirect_address = read(_pc++);
             uint8_t address_lo = read(indirect_address);
-            uint8_t address_hi = read(make_word(lo(indirect_address + 1), hi(indirect_address)));
-            address = make_word(address_lo, address_hi) + _y;
+            uint8_t address_hi = read(word(lo(indirect_address + 1), hi(indirect_address)));
+            address = word(address_lo, address_hi) + _y;
 
             if (page_crossing_penalty && hi(address) != address_hi)
             {
@@ -1042,14 +992,14 @@ void gli2A03::exec()
             _p = value;
             uint8_t lo = pop();
             uint8_t hi = pop();
-            _pc = make_word(lo, hi);
+            _pc = word(lo, hi);
             break;
         }
         case Opcode::RTS:
         {
             uint8_t lo = pop();
             uint8_t hi = pop();
-            _pc = make_word(lo, hi) + 1;
+            _pc = word(lo, hi) + 1;
             break;
         }
         case Opcode::SBC:
@@ -1287,7 +1237,7 @@ std::string gli2A03::disassemble(uint16_t addr)
             format = "%02X %02X %02X  %s $%04X";
             opbytes[0] = read(addr + 1);
             opbytes[1] = read(addr + 2);
-            operand = make_word(opbytes[0], opbytes[1]);
+            operand = word(opbytes[0], opbytes[1]);
             len = 3;
             break;
         }
@@ -1296,7 +1246,7 @@ std::string gli2A03::disassemble(uint16_t addr)
             format = "%02X %02X %02X  %s $%04X,X";
             opbytes[0] = read(addr + 1);
             opbytes[1] = read(addr + 2);
-            operand = make_word(opbytes[0], opbytes[1]);
+            operand = word(opbytes[0], opbytes[1]);
             len = 3;
             break;
         }
@@ -1305,7 +1255,7 @@ std::string gli2A03::disassemble(uint16_t addr)
             format = "%02X %02X %02X  %s $%04X,Y";
             opbytes[0] = read(addr + 1);
             opbytes[1] = read(addr + 2);
-            operand = make_word(opbytes[0], opbytes[1]);
+            operand = word(opbytes[0], opbytes[1]);
             len = 3;
             break;
         }
@@ -1314,7 +1264,7 @@ std::string gli2A03::disassemble(uint16_t addr)
             format = "%02X %02X %02X  %s ($%04X)";
             opbytes[0] = read(addr + 1);
             opbytes[1] = read(addr + 2);
-            operand = make_word(opbytes[0], opbytes[1]);
+            operand = word(opbytes[0], opbytes[1]);
             len = 3;
             break;
         }

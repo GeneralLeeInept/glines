@@ -250,13 +250,13 @@ public:
 
     void load_palette(const std::string& path)
     {
-        uint8_t palette[256];
+        uint8_t palette[768];
         memset(palette, 0, sizeof(palette));
         std::ifstream f(path, std::ios::binary);
 
         if (f)
         {
-            f.read((char*)palette, 256);
+            f.read((char*)palette, 768);
         }
 
         set_palette(palette);

@@ -13,8 +13,12 @@ public:
 
     bool load(const std::string& path);
 
-    uint8_t cpu_read(uint16_t addr);
-    void cpu_write(uint16_t addr, uint8_t val);
+    uint8_t cpu_read(uint16_t address);
+    void cpu_write(uint16_t address, uint8_t value);
+
+    bool ppu_read(uint16_t address, uint8_t& value);
+    bool ppu_write(uint16_t address, uint8_t value);
+    uint16_t ppu_remap_address(uint16_t address);
 
 protected:
     friend class Mapper;

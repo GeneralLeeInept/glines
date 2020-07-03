@@ -17,7 +17,6 @@ public:
 
     void reset(bool coldstart);
     void clock();
-    void step();
 
     std::string disassemble(uint16_t addr);
 

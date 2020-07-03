@@ -116,6 +116,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalOptions>/D_ITERATOR_DEBUG_LEVEL=0 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -139,14 +140,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="bits.h" />
     <ClInclude Include="gamepak.h" />
     <ClInclude Include="gli2a03.h" />
+    <ClInclude Include="gli2c02.h" />
     <ClInclude Include="vga9.h" />
     <ClInclude Include="vgfw.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="gamepak.cpp" />
     <ClCompile Include="gli2a03.cpp" />
+    <ClCompile Include="gli2c02.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

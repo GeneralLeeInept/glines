@@ -7,6 +7,7 @@
 
 #include "gamepak.h"
 #include "gli2a03.h"
+#include "gli2c02.h"
 #include "vga9.h"
 
 class GliNes : public Vgfw
@@ -37,12 +38,13 @@ public:
 
 
     gli2A03 _cpu;
+    gli2C02 _ppu;
     std::shared_ptr<GamePak> _game_pak;
     uint8_t _ram[2 * 1024];
 
 
     // Bus
-    enum MemoryMap
+    enum CpuMemoryMap
     {
         RAM_BASE = 0x0000,
         RAM_TOP = 0x1FFF,
@@ -51,21 +53,21 @@ public:
         APU_IO_BASE = 0x4000,
         APU_IO_TOP = 0x401F,
         CART_BASE = 0x4020,
-        MEM_TOP = 0xFFFF
     };
 
 
     uint8_t read(uint16_t addr)
     {
-        if (addr < RAM_TOP + 1)
+        if (addr <= CpuMemoryMap::RAM_TOP)
         {
-            return _ram[addr & 0x7FF];
+            addr = CpuMemoryMap::RAM_BASE + (addr & 0x7FF);
+            return _ram[addr];
         }
-        else if (addr < PPU_REG_TOP + 1)
+        else if (addr <= CpuMemoryMap::PPU_REG_TOP)
         {
-
+            return _ppu.cpu_read(addr);
         }
-        else if (addr < APU_IO_TOP + 1)
+        else if (addr <= CpuMemoryMap::APU_IO_TOP)
         {
 
         }
@@ -80,15 +82,16 @@ public:
 
     void write(uint16_t addr, uint8_t val)
     {
-        if (addr < RAM_TOP + 1)
+        if (addr <= CpuMemoryMap::RAM_TOP)
         {
-            _ram[addr & 0x7FF] = val;
+            addr = CpuMemoryMap::RAM_BASE + (addr & 0x7FF);
+            _ram[addr] = val;
         }
-        else if (addr < PPU_REG_TOP + 1)
+        else if (addr <= CpuMemoryMap::PPU_REG_TOP)
         {
-
+            _ppu.cpu_write(addr, val);
         }
-        else if (addr < APU_IO_TOP + 1)
+        else if (addr <= CpuMemoryMap::APU_IO_TOP)
         {
 
         }
@@ -105,8 +108,8 @@ public:
 
     void reset(bool coldstart)
     {
-        _cpu.reset(true);
-        _cpu._pc = 0xC000;   // nestest ROM autorun start address
+        _cpu.reset(coldstart);
+        _ppu.reset(coldstart);
         auto_step = false;
         _system_clock = 0;
     }
@@ -120,6 +123,8 @@ public:
         {
             _cpu.clock();
         }
+
+        _ppu.clock();
     }
 
 
@@ -133,6 +138,8 @@ public:
             _game_pak = nullptr;
         }
 
+        _ppu.connect_game_pak(_game_pak);
+
         return !!_game_pak;
     }
 
@@ -140,6 +147,7 @@ public:
     uint16_t mem_offs = 0x0;
     bool auto_step = false;
     float next_step = 0.0f;
+    uint8_t palette = 0;
 
 
     bool on_update(float delta) override
@@ -158,9 +166,14 @@ public:
             mem_offs -= 32 * 16;
         }
 
+        if (m_keys['P'].pressed)
+        {
+            palette = (palette + 1) & 0x7;
+        }
+
         if (m_keys[VK_OEM_3].pressed)
         {
-            reset(false);
+            reset(m_keys[VK_LCONTROL].down);
         }
         else
         {
@@ -170,17 +183,12 @@ public:
                 next_step = 0.0f;
             }
 
-            if (m_keys[VK_SPACE].pressed)
-            {
-                next_step = 0.0f;
-            }
-
             if (auto_step)
             {
-                for (int i = 0; i < 335; ++i)   // ~1 frame
+                for (int i = 0; i < 0x7BDA1; ++i)   // ~1 frame
                     clock();
             }
-            else if (m_keys[VK_F10].pressed)
+            else if (m_keys[VK_F11].pressed)
             {
                 uint16_t pc = _cpu._pc;
 
@@ -189,13 +197,22 @@ public:
                     clock();
                 } while (!_cpu._stopped && (_cpu._pc == pc));
             }
+            else if (m_keys[VK_F10].pressed)
+            {
+                uint32_t f = _ppu.frame_number();
+
+                do
+                {
+                    clock();
+                } while (_ppu.frame_number() == f);
+            }
             else if (m_keys[VK_SPACE].down)
             {
                 next_step += delta;
 
-                if (next_step >= 0.25f)
+                while (next_step >= 0.0025f)
                 {
-                    next_step -= 0.25f;
+                    next_step -= 0.0025f;
                     clock();
                 }
             }
@@ -204,32 +221,16 @@ public:
         clear_screen(0x3F);
 
         // TV display
-        std::array<uint8_t, 256 * 256> pixels;
+        copy_rect_scaled(16, 16, 512, 480, _ppu._screen.data(), 256, 2);
 
-        for (uint8_t& p : pixels)
-        {
-            int r = rand();
-            p = (r & 0x0000A000) ? 0x3D : ((r & 0x00000005) ? 0x2D : 0x0F);
-        }
+        // Pattern table 1
+        std::array<uint8_t, 0x4000> pattern_table;
+        _ppu.get_pattern_table(0, palette, pattern_table);
+        copy_rect_scaled(16, 512, 256, 256, pattern_table.data(), 128, 2);
 
-        copy_rect_scaled(16, 16, 512, 512, pixels.data(), 256, 2);
-
-        // Palette
-        int pal_y = 16 + 512 + 16;
-
-        for (int i = 0; i < 4; ++i)
-        {
-            int pal_x = 16;
-            uint8_t c = i * 16;
-
-            for (int j = 0; j < 16; ++j)
-            {
-                fill_rect(pal_x, pal_y, 32, 32, 0, c++, 0);
-                pal_x += 33;
-            }
-
-            pal_y += 33;
-        }
+        // Pattern table 2
+        _ppu.get_pattern_table(1, palette, pattern_table);
+        copy_rect_scaled(16+256, 512, 256, 256, pattern_table.data(), 128, 2);
 
         // Dump RAM
         int ram_dump_x = 16 + (DisplayWidth * 2) + 16;
@@ -304,8 +305,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
 
     nes.load_palette("ntscpalette.pal");
     nes.load_game_pak(R"(D:\EMU\nes\nestest.nes)");
-    //nes.load_cartridge(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
-    //nes.load_cartridge(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
     nes.run();
 
     return 0;
