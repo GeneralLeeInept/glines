@@ -18,7 +18,6 @@ public:
     void reset(bool coldstart);
     void clock();
     void step();
-    bool busy() { return !_stopped && (_instruction_cycles_remaining > 0); }
 
     std::string disassemble(uint16_t addr);
 

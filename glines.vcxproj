@@ -139,11 +139,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="gamepak.h" />
     <ClInclude Include="gli2a03.h" />
     <ClInclude Include="vga9.h" />
     <ClInclude Include="vgfw.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="gamepak.cpp" />
     <ClCompile Include="gli2a03.cpp" />
     <ClCompile Include="main.cpp" />
   </ItemGroup>

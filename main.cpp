@@ -5,95 +5,9 @@
 #include <functional>
 #include <vector>
 
+#include "gamepak.h"
 #include "gli2a03.h"
 #include "vga9.h"
-
-class Cartridge
-{
-public:
-    Cartridge() = default;
-    ~Cartridge() = default;
-
-    bool load(const std::string& path)
-    {
-        std::ifstream ifs(path, std::ios::binary);
-
-        if (!ifs)
-        {
-            return false;
-        }
-
-        ifs.read(_header, 16);
-
-        if (!ifs)
-        {
-            return false;
-        }
-
-        bool ines = (_header[0] == 'N' && _header[1] == 'E' && _header[2] == 'S' && _header[3] == 0x1A);
-
-        if (!ines)
-        {
-            return false;
-        }
-
-        if ((_header[7] & 0x0C) == 0x08)
-        {
-            // NES2.0
-        }
-        else
-        {
-            // iNES
-            if (_header[6] & 4)
-            {
-                // Skip 512 byte trainer
-                ifs.seekg(512, std::ios_base::cur);
-            }
-
-            if (!ifs)
-            {
-                return false;
-            }
-
-            // Read PRG ROM into RAM
-            _prg_rom.resize(_header[4] * size_t(0x4000));
-            ifs.read((char*)(_prg_rom.data()), _prg_rom.size());
-        }
-
-        return true;
-    }
-
-    uint8_t cpu_read(uint16_t addr)
-    {
-        if (addr >= 0x6000 && addr < 0x8000)
-        {
-            addr &= 0x1FFF;
-            return _prg_ram[addr];
-        }
-        else if (addr >= 0x8000)
-        {
-            addr &= (_prg_rom.size() - 1);
-            return _prg_rom[addr];
-        }
-
-        return 0;
-    }
-
-    void cpu_write(uint16_t addr, uint8_t val)
-    {
-        if (addr >= 0x6000 && addr < 0x8000)
-        {
-            addr &= 0x1FFF;
-            _prg_ram[addr] = val;
-        }
-    }
-
-    char _header[16]{};
-    std::vector<uint8_t> _prg_rom;
-
-    // FIXME: Mapper.. this is just to run blargg's tests for now
-    std::array<uint8_t, 8 * 1024> _prg_ram;
-};
 
 class GliNes : public Vgfw
 {
@@ -123,8 +37,9 @@ public:
 
 
     gli2A03 _cpu;
-    std::shared_ptr<Cartridge> _cart;
+    std::shared_ptr<GamePak> _game_pak;
     uint8_t _ram[2 * 1024];
+
 
     // Bus
     enum MemoryMap
@@ -154,9 +69,9 @@ public:
         {
 
         }
-        else if (_cart)
+        else if (_game_pak)
         {
-            return _cart->cpu_read(addr);
+            return _game_pak->cpu_read(addr);
         }
 
         return 0;
@@ -177,9 +92,9 @@ public:
         {
 
         }
-        else if (_cart)
+        else if (_game_pak)
         {
-            _cart->cpu_write(addr, val);
+            _game_pak->cpu_write(addr, val);
         }
     }
 
@@ -209,21 +124,23 @@ public:
 
 
     // Cart
-    bool load_cartridge(const std::string& path)
+    bool load_game_pak(const std::string& path)
     {
-        _cart = std::make_shared<Cartridge>();
+        _game_pak = std::make_shared<GamePak>();
 
-        if (!_cart->load(path))
+        if (!_game_pak->load(path))
         {
-            _cart = nullptr;
+            _game_pak = nullptr;
         }
 
-        return !!_cart;
+        return !!_game_pak;
     }
+
 
     uint16_t mem_offs = 0x0;
     bool auto_step = false;
     float next_step = 0.0f;
+
 
     bool on_update(float delta) override
     {
@@ -375,6 +292,7 @@ public:
     }
 };
 
+
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow)
 {
     GliNes nes;
@@ -385,7 +303,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     }
 
     nes.load_palette("ntscpalette.pal");
-    nes.load_cartridge(R"(D:\EMU\nes\nestest.nes)");
+    nes.load_game_pak(R"(D:\EMU\nes\nestest.nes)");
     //nes.load_cartridge(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
     //nes.load_cartridge(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
     nes.run();

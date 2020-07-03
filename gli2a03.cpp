@@ -470,12 +470,16 @@ void gli2A03::clock()
 
         if (!_instruction_cycles_remaining)
         {
-            char log[128];
-            std::string dissassembly = disassemble(_pc);
-            snprintf(log, 128, "%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s, _cycle_counter);
-            OutputDebugStringA(log);
-
             // Fetch, decode & execute the next instruction
+
+            if (0)
+            {
+                char log[128];
+                std::string dissassembly = disassemble(_pc);
+                snprintf(log, 128, "%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s, _cycle_counter);
+                OutputDebugStringA(log);
+            }
+
             _ir = read(_pc++);
             exec();
         }

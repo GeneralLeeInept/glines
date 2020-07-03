@@ -24,12 +24,18 @@
     <ClInclude Include="gli2a03.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="gamepak.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="gli2a03.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="gamepak.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
