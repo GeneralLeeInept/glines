@@ -29,6 +29,7 @@ struct INesHeader
     uint8_t unused2 : 2;
 };
 
+
 class Mapper
 {
 public:
@@ -41,10 +42,9 @@ public:
     virtual bool ppu_read(uint16_t address, uint8_t& value) = 0;
     virtual bool ppu_write(uint16_t address, uint8_t value) = 0;
 
-    virtual uint16_t ppu_remap_address(uint16_t address)
+    virtual bool ppu_remap_address(uint16_t& address)
     {
-        // TODO: Mirroring
-        return address;
+        return false;
     }
 
 protected:
@@ -210,13 +210,56 @@ public:
             value = prg_rom()[_x1000 + offset];
             return true;
         }
-
+        else if (address >= 0x2000 && address < 0x2FFF)
+        {
+            uint8_t mirroring = _control & 3;
+            if (mirroring == 0)
+            {
+                // 0: one - screen, lower bank
+                address = 0x2000 + (address & 0x3FF);
+            }
+            else if (mirroring == 1)
+            {
+                // 1: one - screen, upper bank
+                address = 0x2400 + (address & 0x3FF);
+            }
+            else if (mirroring == 2)
+            {
+                // 2: vertical
+                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2800)
+                {
+                    address = 0x2000 | (address & 0x3FF);
+                }
+                else if ((address & 0xFF00) == 0x2400 || (address & 0xFF00) == 0x2C00)
+                {
+                    address = 0x2400 | (address & 0x3FF);
+                }
+            }
+            else
+            {
+                // 3: horizontal
+                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2400)
+                {
+                    address = 0x2000 | (address & 0x3FF);
+                }
+                else if ((address & 0xFF00) == 0x2800 || (address & 0xFF00) == 0x2C00)
+                {
+                    address = 0x2400 | (address & 0x3FF);
+                }
+            }
+        }
         return false;
     }
 
 
     bool ppu_write(uint16_t address, uint8_t value) override
     {
+        if (address >= 0x0000 && address < 0x1000)
+        {
+            uint16_t offset = address & 0x0FFF;
+            chr_rom()[_x0000 + offset] = value;
+            return true;
+        }
         return false;
     }
 
@@ -285,6 +328,7 @@ public:
     uint16_t _x1000;
 };
 
+
 class Mapper_003 : public Mapper
 {
 public:
@@ -335,6 +379,47 @@ public:
 
     uint8_t _chr_bank = 0;
 };
+
+
+class Mapper_004 : public Mapper
+{
+public:
+    Mapper_004(GamePak& cartridge)
+        : Mapper(cartridge) {}
+
+    uint8_t cpu_read(uint16_t address) override
+    {
+        if (address >= 0x8000)
+        {
+            address &= (prg_rom().size() - 1);
+            return prg_rom()[address];
+        }
+
+        return 0;
+    }
+
+
+    void cpu_write(uint16_t address, uint8_t value) override {}
+
+
+    bool ppu_read(uint16_t address, uint8_t& value) override
+    {
+        if (address < 0x2000)
+        {
+            address &= (chr_rom().size() - 1);
+            value = chr_rom()[address];
+            return true;
+        }
+
+        return false;
+    }
+
+
+    bool ppu_write(uint16_t address, uint8_t value) override
+    {
+        return false;
+    }
+}; 
 
 
 bool GamePak::load(const std::string& path)
@@ -410,6 +495,11 @@ bool GamePak::load(const std::string& path)
                 _mapper = std::make_shared<Mapper_003>(*this);
                 break;
             }
+            case 4:
+            {
+                _mapper = std::make_shared<Mapper_004>(*this);
+                break;
+            }
             default:
             {
                 return false;
@@ -447,5 +537,37 @@ bool GamePak::ppu_write(uint16_t address, uint8_t value)
 
 uint16_t GamePak::ppu_remap_address(uint16_t address)
 {
-    return _mapper ? _mapper->ppu_remap_address(address) : address;
+    if (!_mapper || !_mapper->ppu_remap_address(address))
+    {
+        if (address >= 0x2000 && address < 0x3000)
+        {
+            // Mirroring
+            if ((_header_mem[6] & 1) == 0)
+            {
+                // Horizontal
+                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2400)
+                {
+                    address = 0x2000 | (address & 0x3FF);
+                }
+                else if ((address & 0xFF00) == 0x2800 || (address & 0xFF00) == 0x2C00)
+                {
+                    address = 0x2400 | (address & 0x3FF);
+                }
+            }
+            else
+            {
+                // Vertical
+                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2800)
+                {
+                    address = 0x2000 | (address & 0x3FF);
+                }
+                else if ((address & 0xFF00) == 0x2400 || (address & 0xFF00) == 0x2C00)
+                {
+                    address = 0x2400 | (address & 0x3FF);
+                }
+            }
+        }
+    }
+
+    return address;
 }

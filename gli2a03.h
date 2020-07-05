@@ -18,6 +18,8 @@ public:
     void reset(bool coldstart);
     void clock();
 
+    void nmi() { _nmi = 1; }
+
     std::string disassemble(uint16_t addr);
 
     uint16_t    _pc;        // program counter
@@ -35,6 +37,7 @@ private:
     uint8_t _ir;
     uint8_t _instruction_cycles_remaining;
     uint64_t _cycle_counter;
+    uint8_t _nmi = 0;
 
     uint16_t read_word(uint16_t addr);
     void push(uint8_t value);

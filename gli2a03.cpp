@@ -448,7 +448,16 @@ void gli2A03::clock()
                 OutputDebugStringA(log);
             }
 
-            _ir = read(_pc++);
+            if (_nmi)
+            {
+                _ir = 0x00;
+                _pc -= 1;
+            }
+            else
+            {
+                _ir = read(_pc++);
+            }
+
             exec();
         }
 
@@ -730,11 +739,18 @@ void gli2A03::exec()
             push(hi(_pc));
             push(lo(_pc));
             value = _p;
-            set_bit(value, StatusBits::B, 1);
+            set_bit(value, StatusBits::B, _nmi ? 0 : 1);
             set_bit(value, StatusBits::X, 1);
             push(_p);
-            _pc = read_word(0xFFFE);
-            _stopped = true;
+            _pc = read_word(_nmi ? 0xFFFA : 0xFFFE);
+
+            if (!_nmi)
+            {
+                _stopped = true;
+            }
+
+            _nmi = 0;
+
             break;
         }
         case Opcode::BVC:
@@ -1075,6 +1091,45 @@ void gli2A03::exec()
         }
 
         // Unofficial opcodes
+        case Opcode::ALR:
+        {
+            // Equivalent to AND #i then LSR A.Some sources call this "ASR"; we do not follow this out of confusion with the mnemonic for a
+            // pseudoinstruction that combines CMP #$80(or ANC #$FF) then ROR.Note that ALR #$FE acts like LSR followed by CLC.
+            value = _a & read(address);
+            set_bit(_p, StatusBits::C, get_bit(value, 0));
+            value >>= 1;
+            load_register(_a);
+            break;
+        }
+        case Opcode::ANC:
+        {
+            value = _a & read(address);
+            load_register(_a);
+            set_bit(_p, StatusBits::C, get_bit(_p, StatusBits::N));
+            break;
+        }
+        case Opcode::ARR:
+        {
+            // Similar to AND #i then ROR A, except sets the flags differently.N and Z are normal, but C is bit 6 and V is bit 6 xor bit 5. A fast
+            // way to perform signed division by 4 is: CMP #$80; ARR #$FF; ROR.This can be extended to larger powers of two.
+            value = _a & read(address);
+            int c = get_bit(value, 0);
+            value >>= 1;
+            set_bit(value, 7, get_bit(_p, StatusBits::C));
+            load_register(_a);
+            set_bit(_p, StatusBits::C, get_bit(value, 6));
+            set_bit(_p, StatusBits::V, get_bit(value, 6) ^ get_bit(value, 5));
+            break;
+        }
+        case Opcode::AXS:
+        {
+            // Sets X to { (A AND X) - #value without borrow }, and updates NZC.
+            value = read(address);
+            set_bit(_p, StatusBits::C, (_a & _x) >= value);
+            value = (_a & _x) - read(address);
+            load_register(_x);
+            break;
+        }
         case Opcode::DCP:
         {
             value = read(address);

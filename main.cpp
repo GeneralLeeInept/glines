@@ -125,6 +125,12 @@ public:
         }
 
         _ppu.clock();
+
+        if (_ppu._nmi)
+        {
+            _cpu.nmi();
+            _ppu._nmi = 0;
+        }
     }
 
 
@@ -218,7 +224,7 @@ public:
             }
         }
 
-        clear_screen(0x3F);
+        clear_screen(0);
 
         // TV display
         copy_rect_scaled(16, 16, 512, 480, _ppu._screen.data(), 256, 2);
@@ -307,6 +313,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     nes.load_game_pak(R"(D:\EMU\nes\nestest.nes)");
     //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
     //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\1.Branch_Basics.nes)");
     nes.run();
 
     return 0;
