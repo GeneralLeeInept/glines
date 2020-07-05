@@ -542,28 +542,18 @@ uint16_t GamePak::ppu_remap_address(uint16_t address)
         if (address >= 0x2000 && address < 0x3000)
         {
             // Mirroring
-            if ((_header_mem[6] & 1) == 0)
+            if ((_header_mem[6] & 4) == 0)
             {
-                // Horizontal
-                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2400)
+                if ((_header_mem[6] & 1) == 0)
                 {
-                    address = 0x2000 | (address & 0x3FF);
+                    // Horizontal
+                    set_bit(address, 10, get_bit(address, 11));
+                    set_bit(address, 11, 0);
                 }
-                else if ((address & 0xFF00) == 0x2800 || (address & 0xFF00) == 0x2C00)
+                else
                 {
-                    address = 0x2400 | (address & 0x3FF);
-                }
-            }
-            else
-            {
-                // Vertical
-                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2800)
-                {
-                    address = 0x2000 | (address & 0x3FF);
-                }
-                else if ((address & 0xFF00) == 0x2400 || (address & 0xFF00) == 0x2C00)
-                {
-                    address = 0x2400 | (address & 0x3FF);
+                    // Vertical
+                    set_bit(address, 11, 0);
                 }
             }
         }

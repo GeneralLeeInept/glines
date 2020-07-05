@@ -742,6 +742,7 @@ void gli2A03::exec()
             set_bit(value, StatusBits::B, _nmi ? 0 : 1);
             set_bit(value, StatusBits::X, 1);
             push(_p);
+            set_bit(value, StatusBits::I, 1);
             _pc = read_word(_nmi ? 0xFFFA : 0xFFFE);
 
             if (!_nmi)
@@ -1283,7 +1284,7 @@ std::string gli2A03::disassemble(uint16_t addr)
         {
             format = "%02X %02X     %s $%04X";
             opbytes[0] = read(addr + 1);
-            operand = opbytes[0] + (int16_t)(addr + 2);
+            operand = (int8_t)opbytes[0] + addr + 2;
             len = 2;
             break;
         }

@@ -23,6 +23,7 @@ public:
     void get_pattern_table(uint8_t index, uint8_t palette, std::array<uint8_t, 0x4000>& table);
 
     std::array<uint8_t, 256 * 240> _screen;
+    std::array<uint8_t, 0x20> _palette;
 
     uint8_t _nmi = 0;
 
@@ -74,9 +75,8 @@ private:
     };
 
     std::shared_ptr<GamePak> _game_pak;
-    std::array<uint8_t, 0x1000> _ram;
+    std::array<uint8_t, 0x800> _ram;
     std::array<uint8_t, 0x100> _oam;
-    std::array<uint8_t, 0x20> _palette;
 
 
     // Registers
@@ -84,7 +84,6 @@ private:
     PpuMaskRegister _ppumask;
     PpuStatusRegister _ppustatus;
     uint8_t _oamaddr;
-    uint16_t _ppuscroll;
     uint16_t _ppuaddr;  // 'v' register
 
 
@@ -114,8 +113,21 @@ private:
     uint8_t _nt_latch;
     uint8_t _bl_latch;
     uint8_t _bh_latch;
-    uint8_t _al_latch;
-    uint8_t _ah_latch;
+    uint8_t _attribute_latch;
+
+
+    // Shift and mask constants for VRAM address registers (v & t registers)
+    static constexpr uint16_t PpuAddrFineYShift = 0xC;
+    static constexpr uint16_t PpuAddrFineYMask = (0x7 << PpuAddrFineYShift);
+    static constexpr uint16_t PpuAddrNametableYShift = 0xB;
+    static constexpr uint16_t PpuAddrNametableYMask = (0x1 << PpuAddrNametableYShift);
+    static constexpr uint16_t PpuAddrNametableXShift = 0xA;
+    static constexpr uint16_t PpuAddrNametableXMask = (0x1 << PpuAddrNametableXShift);
+    static constexpr uint16_t PpuAddrCoarseYShift = 0x5;
+    static constexpr uint16_t PpuAddrCoarseYMask = (0x1f << PpuAddrCoarseYShift);
+    static constexpr uint16_t PpuAddrCoarseXShift = 0x0;
+    static constexpr uint16_t PpuAddrCoarseXMask = (0x1f << PpuAddrCoarseXShift);
+
 
     // Emulation state
     uint32_t _frame;

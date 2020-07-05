@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 
+#include "bits.h"
 #include "gamepak.h"
 #include "gli2a03.h"
 #include "gli2c02.h"
@@ -15,12 +16,13 @@ class GliNes : public Vgfw
 public:
     static constexpr int DisplayWidth = 256;
     static constexpr int DisplayHeight = 240;
+    static constexpr int DisplayScale = 4;
 
     static constexpr int InspectorWidth = 80 * 9;
     static constexpr int InspectorHeight = 50 * 16;
 
-    static constexpr int WindowWidth = 16 + (DisplayWidth * 2) + 16 + InspectorWidth + 16;
-    static constexpr int WindowHeight = 16 + std::max(DisplayHeight * 2, InspectorHeight) + 16;
+    static constexpr int WindowWidth = 16 + (DisplayWidth * DisplayScale) + 16 + InspectorWidth + 16;
+    static constexpr int WindowHeight = 16 + std::max(DisplayHeight * DisplayScale, InspectorHeight) + 16;
 
 
     bool on_create() override
@@ -51,53 +53,102 @@ public:
         PPU_REG_BASE = 0x2000,
         PPU_REG_TOP = 0x3FFF,
         APU_IO_BASE = 0x4000,
+        JOY1 = 0x4016,
+        JOY2 = 0x4017,
         APU_IO_TOP = 0x401F,
         CART_BASE = 0x4020,
     };
 
 
-    uint8_t read(uint16_t addr)
+    union ControllerState
     {
-        if (addr <= CpuMemoryMap::RAM_TOP)
-        {
-            addr = CpuMemoryMap::RAM_BASE + (addr & 0x7FF);
-            return _ram[addr];
-        }
-        else if (addr <= CpuMemoryMap::PPU_REG_TOP)
-        {
-            return _ppu.cpu_read(addr);
-        }
-        else if (addr <= CpuMemoryMap::APU_IO_TOP)
-        {
+        uint8_t latch;
 
+        struct
+        {
+            uint8_t right : 1;
+            uint8_t left : 1;
+            uint8_t down : 1;
+            uint8_t up : 1;
+            uint8_t start : 1;
+            uint8_t select : 1;
+            uint8_t b : 1;
+            uint8_t a : 1;
+        };
+    };
+
+
+    ControllerState joy1_state{};
+    ControllerState joy2_state{};
+
+
+    uint8_t read(uint16_t address)
+    {
+        uint8_t value = 0; // TODO: open bus behavior (make this static)
+
+        if (address <= CpuMemoryMap::RAM_TOP)
+        {
+            address = CpuMemoryMap::RAM_BASE + (address & 0x7FF);
+            value = _ram[address];
+        }
+        else if (address <= CpuMemoryMap::PPU_REG_TOP)
+        {
+            value = _ppu.cpu_read(address);
+        }
+        else if (address <= CpuMemoryMap::APU_IO_TOP)
+        {
+            if (address == JOY1)
+            {
+                set_bit(value, 0, get_bit(joy1_state.latch, 7));
+                joy1_state.latch <<= 1;
+            }
+            else if (address == JOY2)
+            {
+                set_bit(value, 0, get_bit(joy2_state.latch, 7));
+                joy2_state.latch <<= 1;
+            }
         }
         else if (_game_pak)
         {
-            return _game_pak->cpu_read(addr);
+            value = _game_pak->cpu_read(address);
         }
 
-        return 0;
+        return value;
     }
 
 
-    void write(uint16_t addr, uint8_t val)
+    void write(uint16_t address, uint8_t value)
     {
-        if (addr <= CpuMemoryMap::RAM_TOP)
+        if (address <= CpuMemoryMap::RAM_TOP)
         {
-            addr = CpuMemoryMap::RAM_BASE + (addr & 0x7FF);
-            _ram[addr] = val;
+            address = CpuMemoryMap::RAM_BASE + (address & 0x7FF);
+            _ram[address] = value;
         }
-        else if (addr <= CpuMemoryMap::PPU_REG_TOP)
+        else if (address <= CpuMemoryMap::PPU_REG_TOP)
         {
-            _ppu.cpu_write(addr, val);
+            _ppu.cpu_write(address, value);
         }
-        else if (addr <= CpuMemoryMap::APU_IO_TOP)
+        else if (address <= CpuMemoryMap::APU_IO_TOP)
         {
-
+            if (address == JOY1)
+            {
+                if ((value & 1)== 0)
+                {
+                    // latch controller values
+                    joy1_state.right = m_keys[VK_RIGHT].pressed;
+                    joy1_state.left = m_keys[VK_LEFT].pressed;
+                    joy1_state.up = m_keys[VK_UP].pressed;
+                    joy1_state.down = m_keys[VK_DOWN].pressed;
+                    joy1_state.start = m_keys['V'].pressed;
+                    joy1_state.select = m_keys['B'].pressed;
+                    joy1_state.a = m_keys['Z'].pressed;
+                    joy1_state.b = m_keys['X'].pressed;
+                }
+            }
         }
         else if (_game_pak)
         {
-            _game_pak->cpu_write(addr, val);
+            _game_pak->cpu_write(address, value);
         }
     }
 
@@ -227,19 +278,10 @@ public:
         clear_screen(0);
 
         // TV display
-        copy_rect_scaled(16, 16, 512, 480, _ppu._screen.data(), 256, 2);
-
-        // Pattern table 1
-        std::array<uint8_t, 0x4000> pattern_table;
-        _ppu.get_pattern_table(0, palette, pattern_table);
-        copy_rect_scaled(16, 512, 256, 256, pattern_table.data(), 128, 2);
-
-        // Pattern table 2
-        _ppu.get_pattern_table(1, palette, pattern_table);
-        copy_rect_scaled(16+256, 512, 256, 256, pattern_table.data(), 128, 2);
+        copy_rect_scaled(16, 16, DisplayWidth * DisplayScale, DisplayHeight * DisplayScale, _ppu._screen.data(), 256, DisplayScale);
 
         // Dump RAM
-        int ram_dump_x = 16 + (DisplayWidth * 2) + 16;
+        int ram_dump_x = 16 + (DisplayWidth * DisplayScale) + 16;
         int ram_dump_y = 16;
         int ram_dump_w = InspectorWidth;
         int ram_dump_h = 8 + 32 * vga9_glyph_height + 8;
@@ -257,7 +299,12 @@ public:
 
             for (int p = 0; p < 16; ++p)
             {
-                memp[p] = read(mem_ptr + p);
+                // Don't read registers like this...
+                if ((mem_ptr + p) >= 0x2000 && (mem_ptr + p) <= 0x3FFF)
+                    memp[p] = 0;
+                else
+                    memp[p] = read(mem_ptr + p);
+
                 memc[p] = (memp[p] >= 0x20 && memp[p] <= 0X7F) ? (char)memp[p] : '.';
             }
 
@@ -295,6 +342,30 @@ public:
             bit(_cpu._p, 7), bit(_cpu._p, 6), bit(_cpu._p, 4), bit(_cpu._p, 3), bit(_cpu._p, 2), bit(_cpu._p, 1), bit(_cpu._p, 0), _cpu._stopped ? "** STOPPED **" : "");
         cpu_y += vga9_glyph_height;
 
+        // Pattern table 1
+        int pattern_table_x = ram_dump_x;
+        int pattern_table_y = cpu_y + 16;
+
+        std::array<uint8_t, 0x4000> pattern_table;
+        _ppu.get_pattern_table(0, palette, pattern_table);
+        copy_rect_scaled(pattern_table_x, pattern_table_y, 256, 256, pattern_table.data(), 128, 2);
+
+        // Pattern table 2
+        _ppu.get_pattern_table(1, palette, pattern_table);
+        copy_rect_scaled(pattern_table_x + 256 + 16, pattern_table_y, 256, 256, pattern_table.data(), 128, 2);
+
+        // Palettes
+        int palette_x = ram_dump_x;
+        int palette_y = pattern_table_y + 256 + 16;
+
+        for (uint8_t p = 0; p < 16; ++p)
+        {
+            uint8_t color0 = _ppu._palette[p];
+            uint8_t color1 = _ppu._palette[p + 16];
+            fill_rect(palette_x + (p * 18), palette_y, 16, 16, 1, color0, color0);
+            fill_rect(palette_x + (p * 18), palette_y + 18, 16, 16, 1, color1, color1);
+        }
+
         return true;
     }
 };
@@ -314,6 +385,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
     //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
     //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
     //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\1.Branch_Basics.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\2.Backward_Branch.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\3.Forward_Branch.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\instr_timing\instr_timing.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\ppu_vbl_nmi\ppu_vbl_nmi.nes)");
     nes.run();
 
     return 0;

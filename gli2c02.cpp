@@ -20,7 +20,7 @@ enum PpuRegisters : uint16_t
     PPUDATA     = 0x2007,
 
     REG_BASE    = 0x2000,
-    REG_MASK    = 0x200F
+    REG_MASK    = 0x2007
 };
 
 
@@ -56,31 +56,31 @@ enum PpuMemoryMap
 
 void gli2C02::reset(bool coldstart)
 {
-    // https://wiki.nesdev.com/w/index.php/PPU_power_up_state
-    //
-    // Initial Register Values
-    //  Register                            At Power        After Reset
-    //  PPUCTRL($2000)                      0000 0000       0000 0000
-    //  PPUMASK($2001)                      0000 0000       0000 0000
-    //  PPUSTATUS($2002)                    +0+x xxxx       U??x xxxx
-    //  OAMADDR($2003)                      $00             unchanged (^1)
-    //  $2005 / $2006 latch                 cleared         cleared
-    //  PPUSCROLL($2005)                    $0000           $0000
-    //  PPUADDR($2006)                      $0000           unchanged
-    //  PPUDATA($2007) read buffer          $00             $00
-    //  odd frame                           no              no
-    //  OAM                                 unspecified     unspecified
-    //  Palette                             unspecified     unchanged
-    //  NT RAM(external, in Control Deck)   unspecified     unchanged
-    //  CHR RAM(external, in Game Pak)      unspecified     unchanged
-    //
-    //  ? = unknown, x = irrelevant, + = often set, U = unchanged
-    //  (^1): Although OAMADDR is unchanged by reset, it is changed during rendering and cleared at the end of normal rendering, so you should assume
-    //        its contents will be random.
+    /*
+        https://wiki.nesdev.com/w/index.php/PPU_power_up_state
 
-    _frame = 0;
-    _scanline = 0;
-    _cycle = 0;
+        Initial Register Values
+
+        Register                             |   At Power     |   After Reset
+        -------------------------------------+----------------+--------------
+        PPUCTRL($2000)                       |   0000 0000    |   0000 0000
+        PPUMASK($2001)                       |   0000 0000    |   0000 0000
+        PPUSTATUS($2002)                     |   +0+x xxxx    |   U??x xxxx
+        OAMADDR($2003)                       |   $00          |   unchanged (1)
+        $2005 / $2006 latch                  |   cleared      |   cleared
+        PPUSCROLL($2005)                     |   $0000        |   $0000
+        PPUADDR($2006)                       |   $0000        |   unchanged
+        PPUDATA($2007) read buffer           |   $00          |   $00
+        odd frame                            |   no           |   no
+        OAM                                  |   unspecified  |   unspecified
+        Palette                              |   unspecified  |   unchanged
+        NT RAM(external, in Control Deck)    |   unspecified  |   unchanged
+        CHR RAM(external, in Game Pak)       |   unspecified  |   unchanged
+        
+        ? = unknown, x = irrelevant, + = often set, U = unchanged
+        (1): Although OAMADDR is unchanged by reset, it is changed during rendering and cleared at the end of normal rendering, so you should assume
+            its contents will be random.
+    */
 
     _ppuctrl.reg = 0;
     _ppumask.reg = 0;
@@ -90,15 +90,17 @@ void gli2C02::reset(bool coldstart)
 
     if (coldstart)
     {
-        _ppustatus.O = 1;
-        _ppustatus.V = 1;
+        _ppustatus.reg = 0;
         _oamaddr = 0;
-        _ppuscroll = 0;
         _ppuaddr = 0;
         _temp_vram_address = 0;
         _fine_x_scroll = 0;
-        _reset = 0;
     }
+
+    _frame = 0;
+    _scanline = 0;
+    _cycle = 0;
+    _reset = 1;
 }
 
 
@@ -109,181 +111,27 @@ void gli2C02::clock()
         if (_scanline >= 0 && _scanline < 240 && _cycle < 256)
         {
             uint8_t p = read(PpuMemoryMap::PALETTE_BASE);
-            _screen[_scanline * 256 + _cycle] = p;
+            _screen[size_t(_scanline) * 256 + _cycle] = p;
         }
     }
     else
     {
         if (_scanline < 240)
         {
-            uint8_t bg_pixel = 0;
-            uint8_t fg_pixel = 0;
-
-            if (_ppumask.b || _ppumask.s)
+            // Update registers
+            if (_cycle == 0)
             {
-                // Update registers
-                if (_cycle <= 256)
+                // Cycle zero is idle except on the first rendering scanline of odd frames it does the second tick of the last dummy nametable fetch.
+                if (_frame & 1)
                 {
-                    uint8_t phase = (_cycle & 0x7);
-
-                    if (_cycle == 0 && _scanline == 0)
-                    {
-                        // Cycle zero is idle except on odd frames it does the second tick of the last dummy nametable fetch.
-                        phase = (_frame & 1) ? 2 : 0xFF;
-                    }
-
-                    // Fetch & latch
-                    switch (phase)
-                    {
-                        case 1:
-                        {
-                            // Reload shift registers
-                            _bl_shift = (_bl_shift & 0xFF00) | _bl_latch;
-                            _bh_shift = (_bh_shift & 0xFF00) | _bh_latch;
-                            _al_shift = (_al_shift & 0xFF00) | _al_latch;
-                            _ah_shift = (_ah_shift & 0xFF00) | _ah_latch;
-                            break;
-                        }
-                        case 2:
-                        {
-                            // Latch name table
-                            uint16_t tile_address = PpuMemoryMap::NAMETABLE_BASE | (_ppuaddr & 0x0FFF);
-                            _nt_latch = read(tile_address);
-                            break;
-                        }
-                        case 4:
-                        {
-                            // Latch attribute byte
-                            uint16_t attribute_address = 0x23C0 | (_ppuaddr & 0x0C00) | ((_ppuaddr & 0x0380) >> 4) | ((_ppuaddr & 0x001C) >> 2);
-                            uint8_t attribute_byte = read(attribute_address);
-
-                            // Select crumb for tile
-                            uint8_t c = ((_ppuaddr & 0x3) < 2) ? 0 : 2;
-                            uint8_t r = (((_ppuaddr >> 5) & 0x3) < 2) ? 0 : 4;
-                            uint8_t s = (c + r);
-                            _al_latch = (attribute_byte & (1 << s)) ? 0xFF : 0;
-                            _ah_latch = (attribute_byte & (2 << s)) ? 0xFF : 0;
-                            break;
-                        }
-                        case 6:
-                        {
-                            // Latch low BG tile byte
-                            uint16_t address;
-                            address = (_ppuctrl.B << 0xC) | (_nt_latch << 4) | (0 << 3) | ((_ppuaddr >> 12) & 0x7);
-                            _bl_latch = read(address);
-                            break;
-                        }
-                        case 0:
-                        {
-                            // Latch high BG tile byte
-                            uint16_t address;
-                            address = (_ppuctrl.B << 0xC) | (_nt_latch << 4) | (1 << 3) | ((_ppuaddr >> 12) & 0x7);
-                            _bh_latch = read(address);
-                            break;
-                        }
-                    }
-
-                    if (phase == 0)
-                    {
-                        // Inc hori(v)
-                        uint8_t coarse_x = _ppuaddr & 0x1F;
-                        coarse_x++;
-                        if (coarse_x == 0x20)
-                        {
-                            coarse_x = 0;
-                            _ppuaddr ^= 0x0400; // Toggle bit 10 (low bit of nametable select) when coarse x wraps around
-                        }
-                        _ppuaddr = (_ppuaddr & ~0x1F) | (coarse_x & 0x1F);
-                    }
+                    // Fetch nametable byte
+                    uint16_t tile_address = PpuMemoryMap::NAMETABLE_BASE | (_ppuaddr & 0x0FFF);
+                    _nt_latch = read(tile_address);
                 }
-                else if (_cycle == 257)
-                {
-                    // Inc vert(v)
-                    uint16_t fine_y = _ppuaddr >> 12;
-                    fine_y++;
-                    _ppuaddr = (_ppuaddr & ~0x7000) | (fine_y & 0x07) << 12;
-
-                    if (fine_y & 0x08)
-                    {
-                        uint8_t coarse_y = (_ppuaddr & 0x03E0) >> 5;
-                        coarse_y++;
-
-                        /*
-                            Row 29 is the last row of tiles in a nametable. To wrap to the next nametable when incrementing coarse Y from 29, the
-                            vertical nametable is switched by toggling bit 11, and coarse Y wraps to row 0.
-
-                            Coarse Y can be set out of bounds (> 29), which will cause the PPU to read the attribute data stored there as tile data.
-                            If coarse Y is incremented from 31, it will wrap to 0, but the nametable will not switch.
-                        */
-                        if (coarse_y == 30)
-                        {
-                            coarse_y = 0;
-                            _ppuaddr ^= 0x0800;
-                        }
-
-                        _ppuaddr = (_ppuaddr & ~0x03E0) | (coarse_y & 0x1F) << 5;
-                    }
-
-                    // hori(v) = hori(t)
-                    _ppuaddr = (_ppuaddr & ~0x1F) | (_temp_vram_address & 0x1F);
-                }
-                else if (_cycle >= 280 && _cycle < 305)
-                {
-                    if (_scanline == -1)
-                    {
-                        // vert(v) = vert(t)
-                        _ppuaddr = (_ppuaddr & ~0x73E0) | (_temp_vram_address & 0x73E0);
-                    }
-                }
-                else if (_cycle > 320 && _cycle <= 337)
-                {
-                    if (_cycle == 322 || _cycle == 330)
-                    {
-                        // Latch name table
-                        uint16_t tile_address = PpuMemoryMap::NAMETABLE_BASE | (_ppuaddr & 0x0FFF);
-                        _nt_latch = read(tile_address);
-                    }
-                    else if (_cycle == 324 || _cycle == 332)
-                    {
-                        // Latch attribute byte
-                        uint16_t attribute_address = 0x23C0 | (_ppuaddr & 0x0C00) | ((_ppuaddr & 0x0380) >> 4) | ((_ppuaddr & 0x001C) >> 2);
-                        _al_latch = read(attribute_address);
-                    }
-                    else if (_cycle == 326 || _cycle == 334)
-                    {
-                        // Latch low BG tile byte
-                        uint16_t address;
-                        address = (_ppuctrl.B << 0xC) | (_nt_latch << 4) | (0 << 3) | ((_ppuaddr >> 12) & 0x7);
-                        _bl_latch = read(address);
-                    }
-                    else if (_cycle == 328 || _cycle == 336)
-                    {
-                        // Latch high BG tile byte
-                        uint16_t address;
-                        address = (_ppuctrl.B << 0xC) | (_nt_latch << 4) | (1 << 3) | ((_ppuaddr >> 12) & 0x7);
-                        _bh_latch = read(address);
-                    }
-                    else if (_cycle == 329 || _cycle == 337)
-                    {
-                        // Reload shift registers
-                        _bl_shift = (_bl_shift & 0xFF00) | _bl_latch;
-                        _bh_shift = (_bh_shift & 0xFF00) | _bh_latch;
-                        _al_shift = _al_latch;
-                        _ah_shift = _ah_latch;
-                    }
-                }
-
-                if (_scanline >= 0 && _cycle < 256)
-                {
-                    // Produce background pixel
-                    uint8_t al = _al_shift >> (15 - _fine_x_scroll);
-                    uint8_t ah = _ah_shift >> (15 - _fine_x_scroll);
-                    uint8_t bl = _bl_shift >> (15 - _fine_x_scroll);
-                    uint8_t bh = _bh_shift >> (15 - _fine_x_scroll);
-                    bg_pixel = (ah << 3) | (al << 2) | (bh << 1) | bl;
-                }
-
-                if ((_cycle >= 2 && _cycle <= 257) || (_cycle >= 322 && _cycle <= 337))
+            }
+            else if (_cycle <= 256 || (_cycle > 320 && _cycle <= 337))
+            {
+                if (_cycle > 1)
                 {
                     // Shift background shift registers
                     _bl_shift <<= 1;
@@ -291,12 +139,168 @@ void gli2C02::clock()
                     _al_shift <<= 1;
                     _ah_shift <<= 1;
                 }
-            } // if _ppumask.b
 
-            if (_scanline >= 0 && _cycle < 256)
+                uint8_t phase;
+                phase = ((_cycle - 1) & 7);
+
+                switch (phase)
+                {
+                    case 0:
+                    {
+                        // Reload shift registers
+                        _bl_shift = (_bl_shift & 0xFF00) | _bl_latch;
+                        _bh_shift = (_bh_shift & 0xFF00) | _bh_latch;
+                        _al_shift = (_al_shift & 0xFF00) | ((_attribute_latch & 1) ? 0xFF : 0);
+                        _ah_shift = (_ah_shift & 0xFF00) | ((_attribute_latch & 2) ? 0xFF : 0);
+                        break;
+                    }
+                    case 1:
+                    {
+                        // Fetch nametable byte
+                        uint16_t tile_address = PpuMemoryMap::NAMETABLE_BASE | (_ppuaddr & 0x0FFF);
+                        _nt_latch = read(tile_address);
+                        break;
+                    }
+                    case 3:
+                    {
+                        // Fetch attribute byte
+                        uint16_t coarse_y = (_ppuaddr & PpuAddrCoarseYMask) >> PpuAddrCoarseYShift;
+                        uint16_t coarse_x = (_ppuaddr & PpuAddrCoarseXMask) >> PpuAddrCoarseXShift;
+                        uint16_t attribute_address = 0x23C0 | (_ppuaddr & 0x0C00) | ((coarse_y >> 2) << 3) | (coarse_x >> 2);
+                        _attribute_latch = read(attribute_address);
+                        if (coarse_y & 0x02) _attribute_latch >>= 4;
+                        if (coarse_x & 0x02) _attribute_latch >>= 2;
+                        break;
+                    }
+                    case 5:
+                    {
+                        // Fetch low BG tile byte
+                        uint16_t address;
+                        address = (_ppuctrl.B << 0xC) | ((uint16_t)_nt_latch << 4) | (0 << 3) | (_ppuaddr & PpuAddrFineYMask) >> PpuAddrFineYShift;
+                        _bl_latch = read(address);
+                        break;
+                    }
+                    case 7:
+                    {
+                        // Fetch high BG tile byte
+                        uint16_t address;
+                        address = (_ppuctrl.B << 0xC) | ((uint16_t)_nt_latch << 4) | (1 << 3) | (_ppuaddr & PpuAddrFineYMask) >> PpuAddrFineYShift;
+                        _bh_latch = read(address);
+                        break;
+                    }
+                }
+
+                if (phase == 7)
+                {
+                    if (_ppumask.b || _ppumask.s)
+                    {
+                        // Inc hori(v)
+                        uint16_t coarse_x = (_ppuaddr & PpuAddrCoarseXMask) >> PpuAddrCoarseXShift;
+
+                        if (coarse_x < 0x1F)
+                        {
+                            _ppuaddr++;
+                        }
+                        else
+                        {
+                            _ppuaddr = _ppuaddr & ~PpuAddrCoarseXMask;
+                            _ppuaddr ^= PpuAddrNametableXMask;
+                        }
+                    }
+                }
+            }
+
+            if (_cycle == 256)
             {
-                // mux background and sprite (TODO - for now just the background)
-                _screen[_scanline * 256 + _cycle] = read(PpuMemoryMap::PALETTE_BASE + bg_pixel);
+                if (_ppumask.b || _ppumask.s)
+                {
+                    // Inc vert(v)
+                    uint16_t fine_y = (_ppuaddr & PpuAddrFineYMask) >> PpuAddrFineYShift;
+
+                    if (fine_y < 0x7)
+                    {
+                        _ppuaddr += 1 << PpuAddrFineYShift;
+                    }
+                    else
+                    {
+                        _ppuaddr &= ~PpuAddrFineYMask;
+
+                        uint16_t coarse_y = (_ppuaddr & PpuAddrCoarseYMask) >> PpuAddrCoarseYShift;
+
+                        if (coarse_y == 29)
+                        {
+                            /*
+                                Row 29 is the last row of tiles in a nametable. To wrap to the next nametable when incrementing coarse Y from 29, the
+                                vertical nametable is switched by toggling bit 11, and coarse Y wraps to row 0.
+                            */
+
+                            _ppuaddr = _ppuaddr & ~PpuAddrCoarseYMask;
+                            _ppuaddr ^= PpuAddrNametableYMask;
+                        }
+                        else if (coarse_y == 31)
+                        {
+                            /*
+                                Coarse Y can be set out of bounds (> 29), which will cause the PPU to read the attribute data stored there as tile
+                                data. If coarse Y is incremented from 31, it will wrap to 0, but the nametable will not switch.
+                            */
+                            _ppuaddr = _ppuaddr & ~PpuAddrCoarseYMask;
+                        }
+                        else
+                        {
+                            _ppuaddr += 1 << PpuAddrCoarseYShift;
+                        }
+                    }
+                }
+            }
+
+            if (_cycle == 257)
+            {
+                if (_ppumask.b || _ppumask.s)
+                {
+                    // hori(v) = hori(t)
+                    _ppuaddr = (_ppuaddr & ~0x41F) | (_temp_vram_address & 0x41F);
+                }
+            }
+
+            if (_cycle >= 280 && _cycle < 305)
+            {
+                if (_scanline == -1)
+                {
+                    if (_ppumask.b || _ppumask.s)
+                    {
+                        // vert(v) = vert(t)
+                        _ppuaddr = (_ppuaddr & ~0x7BE0) | (_temp_vram_address & 0x7BE0);
+                    }
+                }
+            }
+
+            if (_cycle == 338 || _cycle == 340)
+            {
+                uint16_t tile_address = PpuMemoryMap::NAMETABLE_BASE | (_ppuaddr & 0x0FFF);
+                _nt_latch = read(tile_address);
+            }
+
+            uint8_t bg_pixel = 0;
+            uint8_t fg_pixel = 0;
+
+            if (_scanline >= 0 && _cycle >= 1 && _cycle <= 256)
+            {
+                if (_ppumask.b)
+                {
+                    // Produce background pixel
+                    uint8_t bit_select = 0xF - _fine_x_scroll;
+                    uint8_t al = (_al_shift >> bit_select) & 1;
+                    uint8_t ah = (_ah_shift >> bit_select) & 1;
+                    uint8_t bl = (_bl_shift >> bit_select) & 1;
+                    uint8_t bh = (_bh_shift >> bit_select) & 1;
+                    bg_pixel = (ah << 3) | (al << 2) | (bh << 1) | bl;
+                }
+            }
+
+            if (_scanline >= 0 && _cycle >= 1 && _cycle <= 256)
+            {
+                // TODO - mux background and sprite (for now just the background)
+                _screen[_scanline * 256 + (_cycle - 1)] = read(PpuMemoryMap::PALETTE_BASE + bg_pixel);
             }
         } // if _scanline < 240
     }
@@ -308,7 +312,8 @@ void gli2C02::clock()
         if (_ppuctrl.V)
             _nmi = 1;
     }
-    else if (_scanline == -1 && _cycle == 1)
+
+    if (_scanline == -1 && _cycle == 1)
     {
         _ppustatus.reg = 0;
         _reset = 0;
@@ -366,7 +371,8 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
             if (!_reset)
             {
                 _ppuctrl.reg = value;
-                _temp_vram_address = (_temp_vram_address & ~0x0C00) | (((uint16_t)value << 10) & 0x0C00);
+                _temp_vram_address &= ~(PpuAddrNametableYMask | PpuAddrNametableXMask);
+                _temp_vram_address |= ((uint16_t)_ppuctrl.N << PpuAddrNametableXShift) & (PpuAddrNametableYMask | PpuAddrNametableXMask);
             }
 
             break;
@@ -404,8 +410,6 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
             {
                 if (_address_latch == 0)
                 {
-                    _ppuscroll = (_ppuscroll & 0xFF00) | (value << 8);
-
                     /*
                         $2005 first write (w is 0)
 
@@ -413,24 +417,24 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
                         x:              CBA = d: .....CBA
                         w:                  = 1
                     */
-                    _temp_vram_address = (_temp_vram_address & ~0x001F) | ((value >> 3) & 0x1F);
-                    _fine_x_scroll = value & 0x1F;
+                    _temp_vram_address &= ~PpuAddrCoarseXMask;
+                    _temp_vram_address |= ((value >> 3) & PpuAddrCoarseXMask);
+                    _fine_x_scroll = value & 0x7;
                     _address_latch = 1;
                 }
                 else
                 {
-                    _ppuscroll = (_ppuscroll & 0x00FF) | value;
-
                     /*
                         $2005 second write (w is 1)
 
                         t: CBA..HG FED..... = d: HGFEDCBA
                         w:                  = 0
                     */
-                    _temp_vram_address = (_temp_vram_address & ~0x39F0) | (((uint16_t)value << 12) & 0x3000) | (((uint16_t)value << 2) & 0x09F0);
+                    _temp_vram_address &= ~(PpuAddrFineYMask | PpuAddrCoarseYMask);
+                    _temp_vram_address |= ((uint16_t)value << PpuAddrFineYShift) & PpuAddrFineYMask;
+                    _temp_vram_address |= ((uint16_t)(value >> 3) << PpuAddrCoarseYShift) & PpuAddrCoarseYMask;
                     _address_latch = 0;
                 }
-
             }
 
             break;
@@ -448,8 +452,8 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
                         t: X...... ........ = 0
                         w:                  = 1
                     */
-                    _temp_vram_address = (_temp_vram_address & ~0x3F00) | (((uint16_t)value << 8) & 0x3F00);
-                    _temp_vram_address = _temp_vram_address & 0x7FFF;
+                    _temp_vram_address &= 0x00FF;
+                    _temp_vram_address |= ((uint16_t)value & 0x3F) << 8;
                     _address_latch = 1;
                 }
                 else
@@ -461,7 +465,8 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
                         v = t
                         w : = 0
                     */
-                    _temp_vram_address = (_temp_vram_address & ~0x00FF) | value;
+                    _temp_vram_address &= 0xFF00;
+                    _temp_vram_address |= value;
                     _ppuaddr = _temp_vram_address;
                     _address_latch = 0;
                 }
@@ -473,7 +478,7 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
         {
             // VRAM read/write data register. After access, the video memory address will increment by an amount determined by bit 2 of $2000.
             write(_ppuaddr, value);
-            _ppuaddr += (_ppuctrl.I == 0) ? 1 : 32;
+            _ppuaddr += (_ppuctrl.I ? 32 : 1);
             break;
         }
     }
@@ -521,17 +526,13 @@ uint8_t gli2C02::cpu_read(uint16_t address)
                 data that would appear "underneath" the palette.
             */
 
-            if (_ppuaddr >= PpuMemoryMap::PALETTE_BASE)
-            {
-                value = read(_ppuaddr & PpuMemoryMap::NAMETABLE_MASK);
-            }
-            else
-            {
-                value = _ppudatabuffer;
-            }
+            value = _ppudatabuffer;
+            _ppudatabuffer = read(_ppuaddr);
 
-            _ppudatabuffer = read(_ppuaddr & PpuMemoryMap::NAMETABLE_MASK);
-            _ppuaddr += (_ppuctrl.I == 0) ? 1 : 32;
+            if (_ppuaddr >= PpuMemoryMap::PALETTE_BASE)
+                value = _ppudatabuffer;
+
+            _ppuaddr += (_ppuctrl.I ? 32 : 1);
             break;
         }
     }
@@ -569,9 +570,7 @@ void gli2C02::get_pattern_table(uint8_t index, uint8_t palette, std::array<uint8
 
 uint8_t gli2C02::read(uint16_t address)
 {
-    if (address >= PpuMemoryMap::NAMETABLE_MIRROR_BASE && address <= PpuMemoryMap::NAMETABLE_MIRROR_TOP)
-        address -= PpuMemoryMap::NAMETABLE_MIRROR_BASE - PpuMemoryMap::NAMETABLE_BASE;
-
+    address &= 0x3FFF;
     uint8_t value = 0;
 
     if (address <= PpuMemoryMap::PATTERN_TABLE_TOP)
@@ -579,11 +578,12 @@ uint8_t gli2C02::read(uint16_t address)
         if (_game_pak)
             _game_pak->ppu_read(address, value);
     }
-    else if (address <= NAMETABLE_TOP)
+    else if (address <= NAMETABLE_MIRROR_TOP)
     {
+        address &= PpuMemoryMap::NAMETABLE_TOP;
+
         if (_game_pak)
             address = _game_pak->ppu_remap_address(address);
-
 
         if (!_game_pak || !_game_pak->ppu_read(address, value))
         {
@@ -594,6 +594,10 @@ uint8_t gli2C02::read(uint16_t address)
     else if (address <= PpuMemoryMap::PALETTE_TOP)
     {
         address = (address & PpuMemoryMap::PALETTE_MASK) - PpuMemoryMap::PALETTE_BASE;
+        if (address == 0x0010) address = 0x0000;
+        if (address == 0x0014) address = 0x0004;
+        if (address == 0x0018) address = 0x0008;
+        if (address == 0x001C) address = 0x000C;
         value = _palette[address];
     }
 
@@ -603,16 +607,15 @@ uint8_t gli2C02::read(uint16_t address)
 
 void gli2C02::write(uint16_t address, uint8_t value)
 {
-    if (address >= PpuMemoryMap::NAMETABLE_MIRROR_BASE && address <= PpuMemoryMap::NAMETABLE_MIRROR_TOP)
-        address -= PpuMemoryMap::NAMETABLE_MIRROR_BASE - PpuMemoryMap::NAMETABLE_BASE;
-
     if (address <= PpuMemoryMap::PATTERN_TABLE_TOP)
     {
         if (_game_pak)
             _game_pak->ppu_write(address, value);
     }
-    else if (address <= NAMETABLE_TOP)
+    else if (address <= NAMETABLE_MIRROR_TOP)
     {
+        address &= PpuMemoryMap::NAMETABLE_TOP;
+
         if (_game_pak)
             address = _game_pak->ppu_remap_address(address);
 
@@ -625,6 +628,10 @@ void gli2C02::write(uint16_t address, uint8_t value)
     else if (address <= PpuMemoryMap::PALETTE_TOP)
     {
         address = (address & PpuMemoryMap::PALETTE_MASK) - PpuMemoryMap::PALETTE_BASE;
+        if (address == 0x0010) address = 0x0000;
+        if (address == 0x0014) address = 0x0004;
+        if (address == 0x0018) address = 0x0008;
+        if (address == 0x001C) address = 0x000C;
         _palette[address] = value;
     }
 }

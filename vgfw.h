@@ -439,12 +439,12 @@ public:
         uint8_t* backbuffer = m_framebuffer[m_frontbuffer ^ 1];
         uint8_t* dest = backbuffer + x + y * screen_width;
 
-        x = (x + w < screen_width) ? x : (screen_width - x);
+        w = (x + w < screen_width) ? w : (screen_width - x);
 
         if (x <= 0)
             return;
 
-        y = (y + h < screen_height) ? y : (screen_height - y);
+        h = (y + h < screen_height) ? h : (screen_height - y);
 
         if (y <= 0)
             return;
