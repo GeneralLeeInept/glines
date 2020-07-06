@@ -18,7 +18,8 @@ public:
     void reset(bool coldstart);
     void clock();
 
-    void nmi() { _nmi = 1; }
+    void dma(uint8_t page);
+    void nmi();
 
     std::string disassemble(uint16_t addr);
 
@@ -34,10 +35,12 @@ private:
     ReadCallback read;
     WriteCallback write;
 
+    uint64_t _cycle_counter;
     uint8_t _ir;
     uint8_t _instruction_cycles_remaining;
-    uint64_t _cycle_counter;
-    uint8_t _nmi = 0;
+    uint8_t _nmi;       // NMI pulled down
+    uint8_t _dma;       // DMA requested
+    uint16_t _dmaaddr;  // Source address for DMA transfer
 
     uint16_t read_word(uint16_t addr);
     void push(uint8_t value);

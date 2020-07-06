@@ -53,6 +53,7 @@ public:
         PPU_REG_BASE = 0x2000,
         PPU_REG_TOP = 0x3FFF,
         APU_IO_BASE = 0x4000,
+        OAMDMA = 0x4014,
         JOY1 = 0x4016,
         JOY2 = 0x4017,
         APU_IO_TOP = 0x401F,
@@ -130,19 +131,23 @@ public:
         }
         else if (address <= CpuMemoryMap::APU_IO_TOP)
         {
-            if (address == JOY1)
+            if (address == OAMDMA)
+            {
+                _cpu.dma(value);
+            }
+            else if (address == JOY1)
             {
                 if ((value & 1)== 0)
                 {
                     // latch controller values
-                    joy1_state.right = m_keys[VK_RIGHT].pressed;
-                    joy1_state.left = m_keys[VK_LEFT].pressed;
-                    joy1_state.up = m_keys[VK_UP].pressed;
-                    joy1_state.down = m_keys[VK_DOWN].pressed;
-                    joy1_state.start = m_keys['V'].pressed;
-                    joy1_state.select = m_keys['B'].pressed;
-                    joy1_state.a = m_keys['Z'].pressed;
-                    joy1_state.b = m_keys['X'].pressed;
+                    //joy1_state.right = m_keys[VK_RIGHT].pressed;
+                    //joy1_state.left = m_keys[VK_LEFT].pressed;
+                    //joy1_state.up = m_keys[VK_UP].pressed;
+                    //joy1_state.down = m_keys[VK_DOWN].pressed;
+                    //joy1_state.start = m_keys['V'].pressed;
+                    //joy1_state.select = m_keys['B'].pressed;
+                    //joy1_state.a = m_keys['Z'].pressed;
+                    //joy1_state.b = m_keys['X'].pressed;
                 }
             }
         }
@@ -161,8 +166,8 @@ public:
     {
         _cpu.reset(coldstart);
         _ppu.reset(coldstart);
-        auto_step = false;
         _system_clock = 0;
+        run_emulation = false;
     }
 
 
@@ -202,10 +207,9 @@ public:
 
 
     uint16_t mem_offs = 0x0;
-    bool auto_step = false;
-    float next_step = 0.0f;
+    bool run_emulation = false;
     uint8_t palette = 0;
-
+    float accumulated_time = 0.0f;
 
     bool on_update(float delta) override
     {
@@ -236,14 +240,33 @@ public:
         {
             if (m_keys[VK_F5].pressed)
             {
-                auto_step = !auto_step;
-                next_step = 0.0f;
+                run_emulation = !run_emulation;
             }
 
-            if (auto_step)
+            if (run_emulation)
             {
-                for (int i = 0; i < 0x7BDA1; ++i)   // ~1 frame
-                    clock();
+                joy1_state.right = m_keys[VK_RIGHT].down;
+                joy1_state.left = m_keys[VK_LEFT].down;
+                joy1_state.up = m_keys[VK_UP].down;
+                joy1_state.down = m_keys[VK_DOWN].down;
+                joy1_state.start = m_keys['V'].down;
+                joy1_state.select = m_keys['B'].down;
+                joy1_state.a = m_keys['Z'].down;
+                joy1_state.b = m_keys['X'].down;
+
+                accumulated_time += delta;
+
+                if (accumulated_time > 1.0f / 60.0f)
+                {
+                    accumulated_time -= 1.0f / 60.0f;
+
+                    uint32_t f = _ppu.frame_number();
+
+                    do
+                    {
+                        clock();
+                    } while (_ppu.frame_number() == f);
+                }
             }
             else if (m_keys[VK_F11].pressed)
             {
@@ -262,16 +285,6 @@ public:
                 {
                     clock();
                 } while (_ppu.frame_number() == f);
-            }
-            else if (m_keys[VK_SPACE].down)
-            {
-                next_step += delta;
-
-                while (next_step >= 0.0025f)
-                {
-                    next_step -= 0.0025f;
-                    clock();
-                }
             }
         }
 
@@ -358,12 +371,21 @@ public:
         int palette_x = ram_dump_x;
         int palette_y = pattern_table_y + 256 + 16;
 
-        for (uint8_t p = 0; p < 16; ++p)
+        for (uint8_t column = 0; column < 4; ++column)
         {
-            uint8_t color0 = _ppu._palette[p];
-            uint8_t color1 = _ppu._palette[p + 16];
-            fill_rect(palette_x + (p * 18), palette_y, 16, 16, 1, color0, color0);
-            fill_rect(palette_x + (p * 18), palette_y + 18, 16, 16, 1, color1, color1);
+            int palette_x = ram_dump_x + (144 * column);
+
+            for (uint8_t row = 0; row < 2; ++row)
+            {
+                int palette_y = pattern_table_y + 256 + 16 + row * 32;
+                std::array<uint8_t, 4> palette;
+                _ppu.get_palette(column + row * 4, palette);
+
+                for (uint8_t c = 0; c < 4; ++c)
+                {
+                    fill_rect(palette_x + (c * 20), palette_y, 16, 16, 1, palette[c], palette[c]);
+                }
+            }
         }
 
         return true;

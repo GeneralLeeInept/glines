@@ -436,33 +436,57 @@ void gli2A03::clock()
     {
         ++_cycle_counter;
 
-        if (!_instruction_cycles_remaining)
+        if (_dma)
         {
-            // Fetch, decode & execute the next instruction
-
-            if (0)
-            {
-                char log[128];
-                std::string dissassembly = disassemble(_pc);
-                snprintf(log, 128, "%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s, _cycle_counter);
-                OutputDebugStringA(log);
-            }
-
-            if (_nmi)
-            {
-                _ir = 0x00;
-                _pc -= 1;
-            }
-            else
-            {
-                _ir = read(_pc++);
-            }
-
-            exec();
+            // Copy from _dmaaddr to DMADATA register ($2004) on PPU
+            uint8_t value = read(_dmaaddr++);
+            write(0x2004, value);
+            _dma = _dmaaddr & 0xFF;
         }
+        else
+        {
+            if (!_instruction_cycles_remaining)
+            {
+                // Fetch, decode & execute the next instruction
 
-        --_instruction_cycles_remaining;
+                if (0)
+                {
+                    char log[128];
+                    std::string dissassembly = disassemble(_pc);
+                    snprintf(log, 128, "%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s, _cycle_counter);
+                    OutputDebugStringA(log);
+                }
+
+                if (_nmi)
+                {
+                    // Insert a BRK - don't clear _nmi because the BRK handler uses it to decide which interrupt vector to load
+                    _ir = 0x00;
+                    _pc -= 1;
+                }
+                else
+                {
+                    _ir = read(_pc++);
+                }
+
+                exec();
+            }
+
+            --_instruction_cycles_remaining;
+        }
     }
+}
+
+
+void gli2A03::dma(uint8_t page)
+{
+    _dmaaddr = ((uint16_t)page) << 8;
+    _dma = 1;
+}
+
+
+void gli2A03::nmi()
+{
+    _nmi = 1;
 }
 
 

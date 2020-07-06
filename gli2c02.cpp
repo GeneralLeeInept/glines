@@ -50,7 +50,7 @@ enum PpuMemoryMap
 
     PALETTE_BASE            = 0x3F00,
     PALETTE_TOP             = 0x3FFF,
-    PALETTE_MASK            = 0x3F1F,
+    PALETTE_MASK            = 0x1F,
 };
 
 
@@ -66,6 +66,13 @@ static constexpr uint16_t PpuAddrNametableYMask = (0x1 << PpuAddrNametableYShift
 static constexpr uint16_t PpuAddrFineYShift = 0xC;
 static constexpr uint16_t PpuAddrFineYMask = (0x7 << PpuAddrFineYShift);
 
+
+// Emulation state flags
+enum StateFlags
+{
+    Reset       = 0x01, // PPU internal reset signal is set
+    OamReadMask = 0x02, // Reads from OAMDATA return 0xFF
+};
 
 void gli2C02::reset(bool coldstart)
 {
@@ -113,13 +120,13 @@ void gli2C02::reset(bool coldstart)
     _frame = 0;
     _scanline = 0;
     _cycle = 0;
-    _reset = 1;
+    _state_flags = StateFlags::Reset;
 }
 
 
 void gli2C02::clock()
 {
-    if (_reset)
+    if (_state_flags & StateFlags::Reset)
     {
         if (_scanline >= 0 && _scanline < 240 && _cycle < 256)
         {
@@ -131,7 +138,12 @@ void gli2C02::clock()
     {
         if (_scanline < 240)
         {
-            // Update registers
+            // Cycles 338 & 339 aren't really idle but they do their own thing
+            bool idle = (_cycle < 1 ||
+                        (_cycle > 256 && _cycle < 321) ||
+                        _cycle > 338);
+
+            // Process background
             if (_cycle == 0)
             {
                 // Cycle zero is idle except on the first rendering scanline of odd frames it does the second tick of the last dummy nametable fetch.
@@ -202,23 +214,179 @@ void gli2C02::clock()
                         break;
                     }
                 }
+            } // background
 
-                if (phase == 7)
+
+            // Sprite evaluation
+            if (_scanline > -1)
+            {
+                if (_cycle == 1)
                 {
-                    if (_ppumask.b || _ppumask.s)
-                    {
-                        // Inc hori(v)
-                        uint16_t coarse_x = (_ppuaddr & PpuAddrCoarseXMask) >> PpuAddrCoarseXShift;
+                    _state_flags |= StateFlags::OamReadMask;
+                    _sprite_zero_visible >>= 1;
+                    _active_sprites >>= 4;
+                }
+                else if (_cycle == 65)
+                {
+                    _state_flags &= ~StateFlags::OamReadMask;
+                }
 
-                        if (coarse_x < 0x1F)
+                if (_cycle > 0 && _cycle <= 64)
+                {
+                    // Clear secondary OAM - don't bother with the (masked) reads from primary in the odd cycles, just write 0xFF every even cycle
+                    if ((_cycle & 1) == 0)
+                    {
+                        _secondary_oam[(_cycle - 1) >> 1] = 0xFF;
+                    }
+                }
+                else if (_cycle <= 256)
+                {
+                    /*
+                        Cycles 65-256: Sprite evaluation:
+
+                        * On odd cycles, data is read from (primary) OAM
+
+                        * On even cycles, data is written to secondary OAM (unless secondary OAM is full, in which case it will read the value in
+                          secondary OAM instead)
+
+                        1. Starting at n = 0, read a sprite's Y-coordinate (OAM[n][0], copying it to the next open slot in secondary OAM (unless 8
+                           sprites have been found, in which case the write is ignored).
+                                1a. If Y-coordinate is in range, copy remaining bytes of sprite data (OAM[n][1] thru OAM[n][3]) into secondary OAM.
+
+                        2. Increment n
+                            2a. If n has overflowed back to zero (all 64 sprites evaluated), go to 4.
+                            2b. If less than 8 sprites have been found, go to 1.
+                            2c. If exactly 8 sprites have been found, disable writes to secondary OAM because it is full. This causes sprites in back
+                                to drop out.
+
+                        3. Starting at m = 0, evaluate OAM[n][m] as a Y-coordinate.
+                            3a. If the value is in range, set the sprite overflow flag in $2002 and read the next 3 entries of OAM (incrementing 'm'
+                                after each byte and incrementing 'n' when 'm' overflows); if m = 3, increment n.
+                            3b. If the value is not in range, increment n and m (without carry). If n overflows to 0, go to 4; otherwise go to 3.
+                                    The m increment is a hardware bug - if only n was incremented, the overflow flag would be set whenever more than
+                                    8 sprites were present on the same scanline, as expected.
+
+                        4. Attempt (and fail) to copy OAM[n][0] into the next free slot in secondary OAM, and increment n (repeat until HBLANK is
+                           reached).
+                    */
+                    // TODO: Cycle emulation - for now just execute the whole thing on cycle 256
+                    if (_cycle == 256)
+                    {
+                        uint8_t sprite_size = _ppuctrl.H ? 16 : 8;
+                        uint8_t active_sprites = 0;
+
+                        for (uint8_t sprite = 0; sprite < 64; ++sprite)
                         {
-                            _ppuaddr++;
+                            uint8_t oam_read_ptr = (_oamaddr + (sprite << 2)) & 0xFF;
+                            uint8_t sprite_y = _oam[oam_read_ptr];
+                            uint8_t oam_write_ptr = active_sprites << 2;
+
+                            if (sprite_y <= _scanline && (sprite_y + sprite_size) > _scanline)
+                            {
+                                _sprite_zero_visible |= (sprite == 0) ? 2 : 0;
+
+                                if (active_sprites < 8)
+                                {
+                                    for (uint8_t i = 0; i < 4; ++i)
+                                        _secondary_oam[oam_write_ptr++] = _oam[oam_read_ptr++];
+
+                                    active_sprites++;
+                                }
+                                else
+                                {
+                                    _ppustatus.O = 1;
+                                    break;
+                                }
+                            }
+                        }
+
+                        _active_sprites = (active_sprites << 4) | (_active_sprites & 0x0F);
+                    }
+                }
+            } // scanline < 0
+
+            if (_cycle > 256 && _cycle <= 320)
+            {
+                /*
+                    Cycles 257-320: Sprite fetches (8 sprites total, 8 cycles per sprite)
+                        1-4: Read the Y-coordinate, tile number, attributes, and X-coordinate of the selected sprite from secondary OAM
+                        5-8: Read the X-coordinate of the selected sprite from secondary OAM 4 times (while the PPU fetches the sprite tile data)
+                */
+                // TODO: Cycle emulation
+                if (_cycle == 257)
+                {
+                    memset(_sprite_output_units.data(), 0, sizeof(SpriteOutputUnit) * 8);
+
+                    for (uint8_t sprite = 0; sprite < (_active_sprites >> 4); ++sprite)
+                    {
+                        uint8_t oam_read_ptr = sprite << 2;
+                        uint8_t sprite_y = _scanline - _secondary_oam[oam_read_ptr + 0];
+                        uint8_t tile_index = _secondary_oam[oam_read_ptr + 1];
+                        uint8_t pattern_table;
+                        uint16_t lsb_address;
+
+                        // TODO: Vertically flipping changes things..
+
+                        if (_ppuctrl.H == 0)
+                        {
+                            pattern_table = _ppuctrl.S;
                         }
                         else
                         {
-                            _ppuaddr = _ppuaddr & ~PpuAddrCoarseXMask;
-                            _ppuaddr ^= PpuAddrNametableXMask;
+                            pattern_table = tile_index & 1;
+                            tile_index = (tile_index & 0xFE) + (sprite_y >> 7);
                         }
+
+                        lsb_address = (pattern_table << 0xC) | (tile_index << 4) | (sprite_y & 0x7);
+                        _sprite_output_units[sprite].pattern_lo = read(lsb_address);
+                        _sprite_output_units[sprite].pattern_hi = read(lsb_address + 8);
+                        _sprite_output_units[sprite].attributes = _secondary_oam[oam_read_ptr + 2];
+                        _sprite_output_units[sprite].x_position = _secondary_oam[oam_read_ptr + 3];
+
+                        if (_sprite_output_units[sprite].attributes & (1 << 6))
+                        {
+                            _sprite_output_units[sprite].pattern_lo = reverse(_sprite_output_units[sprite].pattern_lo);
+                            _sprite_output_units[sprite].pattern_hi = reverse(_sprite_output_units[sprite].pattern_hi);
+                        }
+                    }
+                }
+
+                /* OAMADDR is set to 0 during each of ticks 257 - 320 (the sprite tile loading interval) of the pre - render and visible scanlines. */
+                _oamaddr = 0;
+            }
+
+            // Update sprite output units
+            if (_cycle > 1 && _cycle <= 256)
+            {
+                for (uint8_t sprite = 0; sprite < (_active_sprites & 0xF); ++sprite)
+                {
+                    if (_sprite_output_units[sprite].x_position > 0)
+                    {
+                        _sprite_output_units[sprite].x_position--;
+                    }
+                    else
+                    {
+                        _sprite_output_units[sprite].pattern_lo <<= 1;
+                        _sprite_output_units[sprite].pattern_hi <<= 1;
+                    }
+                }
+            }
+
+            if (!idle && ((_cycle - 1) & 0x7) == 7)
+            {
+                if (_ppumask.b || _ppumask.s)
+                {
+                    // Inc hori(v)
+                    uint16_t coarse_x = (_ppuaddr & PpuAddrCoarseXMask) >> PpuAddrCoarseXShift;
+
+                    if (coarse_x < 0x1F)
+                    {
+                        _ppuaddr++;
+                    }
+                    else
+                    {
+                        _ppuaddr = _ppuaddr & ~PpuAddrCoarseXMask;
+                        _ppuaddr ^= PpuAddrNametableXMask;
                     }
                 }
             }
@@ -293,12 +461,15 @@ void gli2C02::clock()
                 _nt_latch = read(tile_address);
             }
 
-            uint8_t bg_pixel = 0;
-            uint8_t fg_pixel = 0;
-
-            if (_scanline >= 0 && _cycle >= 1 && _cycle <= 256)
+            if (_scanline >= 0 && _cycle > 0 && _cycle <= 256)
             {
-                if (_ppumask.b)
+                uint8_t bg_pixel = 0;
+                uint8_t bg_palette = 0;
+                uint8_t fg_pixel = 0;
+                uint8_t fg_palette = 0;
+                uint8_t fg_priority = 0;
+
+                if (_ppumask.b && _cycle > (_ppumask.m ? 0 : 8))
                 {
                     // Produce background pixel
                     uint8_t bit_select = 0xF - _fine_x_scroll;
@@ -306,14 +477,59 @@ void gli2C02::clock()
                     uint8_t ah = (_ah_shift >> bit_select) & 1;
                     uint8_t bl = (_bl_shift >> bit_select) & 1;
                     uint8_t bh = (_bh_shift >> bit_select) & 1;
-                    bg_pixel = (ah << 3) | (al << 2) | (bh << 1) | bl;
+                    bg_pixel = (bh << 1) | bl;
+                    bg_palette = (ah << 1) | al;
                 }
-            }
 
-            if (_scanline >= 0 && _cycle >= 1 && _cycle <= 256)
-            {
-                // TODO - mux background and sprite (for now just the background)
-                _screen[_scanline * 256 + (_cycle - 1)] = read(PpuMemoryMap::PALETTE_BASE + bg_pixel);
+                bool sprite_zero_drawn = false;
+
+                if (_ppumask.s && _cycle > (_ppumask.M ? 0 : 8))
+                {
+                    // Produce foreground (sprite) pixel
+                    for (uint8_t sprite = 0; sprite < (_active_sprites & 0xF); ++sprite)
+                    {
+                        if (_sprite_output_units[sprite].x_position == 0)
+                        {
+                            uint8_t pl = (_sprite_output_units[sprite].pattern_lo >> 7) & 1;
+                            uint8_t ph = (_sprite_output_units[sprite].pattern_hi >> 7) & 1;
+                            fg_pixel = (ph << 1 | pl);
+                            fg_palette = (_sprite_output_units[sprite].attributes & 0x3) + 4;
+                            fg_priority = (_sprite_output_units[sprite].attributes & (1 << 5)) == 0;
+
+                            if (fg_pixel)
+                            {
+                                sprite_zero_drawn = (sprite == 0);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Set sprite zero hit flag
+                if (bg_pixel && sprite_zero_drawn)
+                    _ppustatus.S |= _sprite_zero_visible & 1;
+
+                // Mux fg & bg pixels
+                uint8_t pixel = 0x00;
+                uint8_t palette = 0x00;
+
+                if (bg_pixel && fg_pixel)
+                {
+                    pixel = fg_priority ? fg_pixel : bg_pixel;
+                    palette = fg_priority ? fg_palette : bg_palette;
+                }
+                else if (bg_pixel)
+                {
+                    pixel = bg_pixel;
+                    palette = bg_palette;
+                }
+                else if (fg_pixel)
+                {
+                    pixel = fg_pixel;
+                    palette = fg_palette;
+                }
+
+                _screen[_scanline * 256 + (_cycle - 1)] = read(PpuMemoryMap::PALETTE_BASE | (palette << 2) | pixel);
             }
         } // if _scanline < 240
     }
@@ -329,7 +545,7 @@ void gli2C02::clock()
     if (_scanline == -1 && _cycle == 1)
     {
         _ppustatus.reg = 0;
-        _reset = 0;
+        _state_flags &= ~StateFlags::Reset;
     }
 
     ++_cycle;
@@ -354,6 +570,7 @@ void gli2C02::clock()
     if (_scanline == 0 && _cycle == 0)
     {
         _frame++;
+        _sprite_zero_visible = 0;
     }
 }
 
@@ -381,7 +598,7 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
     {
         case PpuRegisters::PPUCTRL:
         {
-            if (!_reset)
+            if ((_state_flags & StateFlags::Reset) == 0)
             {
                 if ((value & 0x80) && !(_ppuctrl.V) && _ppustatus.V)
                 {
@@ -397,7 +614,7 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
         }
         case PpuRegisters::PPUMASK:
         {
-            if (!_reset)
+            if ((_state_flags & StateFlags::Reset) == 0)
                 _ppumask.reg = value;
 
             break;
@@ -417,14 +634,14 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
                 purposes, it is probably best to completely ignore writes during rendering.
             */
 
-            if (_scanline > 239)
+            if (_scanline > 239 || (_ppumask.b == 0 && _ppumask.s == 0))
                 _oam[_oamaddr++] = value;
 
             break;
         }
         case PpuRegisters::PPUSCROLL:
         {
-            if (!_reset)
+            if ((_state_flags & StateFlags::Reset) == 0)
             {
                 if (_address_latch == 0)
                 {
@@ -459,7 +676,7 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
         }
         case PpuRegisters::PPUADDR:
         {
-            if (!_reset)
+            if ((_state_flags & StateFlags::Reset) == 0)
             {
                 if (_address_latch == 0)
                 {
@@ -527,7 +744,11 @@ uint8_t gli2C02::cpu_read(uint16_t address)
         }
         case PpuRegisters::OAMDATA:
         {
-            value = _oam[_oamaddr];
+            if (_state_flags & StateFlags::OamReadMask)
+                value = 0xFF;
+            else
+                value = _oam[_oamaddr];
+
             break;
         }
         case PpuRegisters::PPUDATA:
@@ -559,7 +780,7 @@ uint8_t gli2C02::cpu_read(uint16_t address)
 }
 
 
-void gli2C02::get_pattern_table(uint8_t index, uint8_t palette, std::array<uint8_t, 0x4000>& table)
+void gli2C02::get_pattern_table(uint8_t table_index, uint8_t palette_index, std::array<uint8_t, 0x4000>& pattern_table)
 {
     for (uint16_t t = 0; t < 256; ++t)
     {
@@ -568,7 +789,7 @@ void gli2C02::get_pattern_table(uint8_t index, uint8_t palette, std::array<uint8
 
         for (uint8_t y = 0; y < 8; ++y)
         {
-            uint16_t addr = static_cast<uint16_t>(index) << 12 | t << 4 | y;
+            uint16_t addr = static_cast<uint16_t>(table_index) << 12 | t << 4 | y;
             uint8_t tile_lsb = read(addr);
             uint8_t tile_msb = read(addr + 8);
 
@@ -577,11 +798,20 @@ void gli2C02::get_pattern_table(uint8_t index, uint8_t palette, std::array<uint8
                 uint8_t bit = 7 - x;
                 uint8_t lsb = get_bit(tile_lsb, bit);
                 uint8_t msb = get_bit(tile_msb, bit);
-                uint8_t palette_index = (msb << 1) | lsb;
-                uint16_t table_index = ((ty + y) << 7) + (tx + x);
-                table[table_index] = read(PALETTE_BASE + palette_index + (palette << 2));
+                uint8_t pixel = (msb << 1) | lsb;
+                uint16_t offset = ((ty + y) << 7) + (tx + x);
+                pattern_table[offset] = read(pixel ? (PALETTE_BASE | (palette_index << 2) | pixel) : PALETTE_BASE);
             }
         }
+    }
+}
+
+
+void gli2C02::get_palette(uint8_t palette_index, std::array<uint8_t, 4>& palette)
+{
+    for (uint8_t i = 0; i < 4; ++i)
+    {
+        palette[i] = read(PpuMemoryMap::PALETTE_BASE | (palette_index << 2) | i);
     }
 }
 
@@ -611,7 +841,7 @@ uint8_t gli2C02::read(uint16_t address)
     }
     else if (address <= PpuMemoryMap::PALETTE_TOP)
     {
-        address = (address & PpuMemoryMap::PALETTE_MASK) - PpuMemoryMap::PALETTE_BASE;
+        address &= PpuMemoryMap::PALETTE_MASK;
         if (address == 0x0010) address = 0x0000;
         if (address == 0x0014) address = 0x0004;
         if (address == 0x0018) address = 0x0008;
@@ -645,7 +875,7 @@ void gli2C02::write(uint16_t address, uint8_t value)
     }
     else if (address <= PpuMemoryMap::PALETTE_TOP)
     {
-        address = (address & PpuMemoryMap::PALETTE_MASK) - PpuMemoryMap::PALETTE_BASE;
+        address &= PpuMemoryMap::PALETTE_MASK;
         if (address == 0x0010) address = 0x0000;
         if (address == 0x0014) address = 0x0004;
         if (address == 0x0018) address = 0x0008;

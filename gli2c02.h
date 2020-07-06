@@ -20,11 +20,10 @@ public:
     uint8_t cpu_read(uint16_t address);
 
     uint32_t frame_number() { return _frame; }
-    void get_pattern_table(uint8_t index, uint8_t palette, std::array<uint8_t, 0x4000>& table);
+    void get_pattern_table(uint8_t table_index, uint8_t palette_index, std::array<uint8_t, 0x4000>& pattern_table);
+    void get_palette(uint8_t palette_index, std::array<uint8_t, 4>& palette);
 
     std::array<uint8_t, 256 * 240> _screen;
-    std::array<uint8_t, 0x20> _palette;
-
     uint8_t _nmi = 0;
 
 private:
@@ -62,6 +61,7 @@ private:
         };
     };
 
+
     union PpuStatusRegister
     {
         uint8_t reg;
@@ -75,9 +75,21 @@ private:
         };
     };
 
+
+    struct SpriteOutputUnit
+    {
+        uint8_t pattern_lo;
+        uint8_t pattern_hi;
+        uint8_t attributes;
+        uint8_t x_position;
+    };
+
+
     std::shared_ptr<GamePak> _game_pak;
     std::array<uint8_t, 0x800> _ram;
     std::array<uint8_t, 0x100> _oam;
+    std::array<uint8_t, 0x20> _secondary_oam;
+    std::array<uint8_t, 0x20> _palette;
 
 
     // Registers
@@ -116,12 +128,16 @@ private:
     uint8_t _bh_latch;
     uint8_t _attribute_latch;
 
+    std::array<SpriteOutputUnit, 8> _sprite_output_units;
+    uint8_t _active_sprites; // // 0x AA BB -- A: active sprites next scanline, B: active sprites current scanline
+    uint8_t _sprite_zero_visible; // 0b XXXX XX A B -- A: sprite zero visible next scanline, B: sprite zero visible current scanline
+
 
     // Emulation state
     uint32_t _frame;
     int16_t _scanline;
     uint16_t _cycle;
-    uint8_t _reset;
+    uint8_t _state_flags;
 
     uint8_t read(uint16_t address);
     void write(uint16_t address, uint8_t value);
