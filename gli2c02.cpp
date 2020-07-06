@@ -54,6 +54,19 @@ enum PpuMemoryMap
 };
 
 
+// Shift and mask constants for VRAM address registers (v & t registers)
+static constexpr uint16_t PpuAddrCoarseXShift = 0x0;
+static constexpr uint16_t PpuAddrCoarseXMask = (0x1F << PpuAddrCoarseXShift);
+static constexpr uint16_t PpuAddrCoarseYShift = 0x5;
+static constexpr uint16_t PpuAddrCoarseYMask = (0x1F << PpuAddrCoarseYShift);
+static constexpr uint16_t PpuAddrNametableXShift = 0xA;
+static constexpr uint16_t PpuAddrNametableXMask = (0x1 << PpuAddrNametableXShift);
+static constexpr uint16_t PpuAddrNametableYShift = 0xB;
+static constexpr uint16_t PpuAddrNametableYMask = (0x1 << PpuAddrNametableYShift);
+static constexpr uint16_t PpuAddrFineYShift = 0xC;
+static constexpr uint16_t PpuAddrFineYMask = (0x7 << PpuAddrFineYShift);
+
+
 void gli2C02::reset(bool coldstart)
 {
     /*
@@ -370,6 +383,11 @@ void gli2C02::cpu_write(uint16_t address, uint8_t value)
         {
             if (!_reset)
             {
+                if ((value & 0x80) && !(_ppuctrl.V) && _ppustatus.V)
+                {
+                    _nmi = true;
+                }
+
                 _ppuctrl.reg = value;
                 _temp_vram_address &= ~(PpuAddrNametableYMask | PpuAddrNametableXMask);
                 _temp_vram_address |= ((uint16_t)_ppuctrl.N << PpuAddrNametableXShift) & (PpuAddrNametableYMask | PpuAddrNametableXMask);

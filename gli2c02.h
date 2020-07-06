@@ -44,6 +44,7 @@ private:
         };
     };
 
+
     union PpuMaskRegister
     {
         uint8_t reg;
@@ -114,19 +115,6 @@ private:
     uint8_t _bl_latch;
     uint8_t _bh_latch;
     uint8_t _attribute_latch;
-
-
-    // Shift and mask constants for VRAM address registers (v & t registers)
-    static constexpr uint16_t PpuAddrFineYShift = 0xC;
-    static constexpr uint16_t PpuAddrFineYMask = (0x7 << PpuAddrFineYShift);
-    static constexpr uint16_t PpuAddrNametableYShift = 0xB;
-    static constexpr uint16_t PpuAddrNametableYMask = (0x1 << PpuAddrNametableYShift);
-    static constexpr uint16_t PpuAddrNametableXShift = 0xA;
-    static constexpr uint16_t PpuAddrNametableXMask = (0x1 << PpuAddrNametableXShift);
-    static constexpr uint16_t PpuAddrCoarseYShift = 0x5;
-    static constexpr uint16_t PpuAddrCoarseYMask = (0x1f << PpuAddrCoarseYShift);
-    static constexpr uint16_t PpuAddrCoarseXShift = 0x0;
-    static constexpr uint16_t PpuAddrCoarseXMask = (0x1f << PpuAddrCoarseXShift);
 
 
     // Emulation state
