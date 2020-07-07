@@ -27,6 +27,7 @@ public:
 
     bool on_create() override
     {
+        load_palette("ntscpalette.pal");
         _cpu.connect(std::bind(&GliNes::read, this, std::placeholders::_1), std::bind(&GliNes::write, this, std::placeholders::_1, std::placeholders::_2));
         reset(true);
         return true;
@@ -400,7 +401,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
         return 1;
     }
 
-    nes.load_palette("ntscpalette.pal");
     nes.load_game_pak(R"(D:\EMU\nes\nestest.nes)");
     //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
     //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");

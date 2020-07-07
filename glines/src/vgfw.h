@@ -139,7 +139,7 @@ public:
             float delta = elapsed_time.count();
 
             wchar_t title[256];
-            swprintf(title, 256, L"%s - %llu us", m_title, uint64_t(delta * 1000000.0));
+            swprintf(title, 256, L"%s - %llu us (%0.2f fps)", m_title, uint64_t(delta * 1000000.0), 1.0f / delta);
             SetWindowText(m_hwnd, title);
 
             // Process Windows messages

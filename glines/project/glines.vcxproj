@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{9b29e5f6-c536-4627-b89b-a6686d33268a}</ProjectGuid>
+  </PropertyGroup>
+  <PropertyGroup>
+    <Optimized>true</Optimized>
+    <Optimized Condition="'$(Configuration)'=='Debug'">false</Optimized>
+    <RuntimeLibrarySuffix Condition="'$(Configuration)'=='Debug'">Debug</RuntimeLibrarySuffix>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <UseDebugLibraries Condition="'$(Configuration)'=='Debug'">true</UseDebugLibraries>
+    <WholeProgramOptimization Condition="'$(Configuration)'=='Debug'">false</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)_builds\$(ProjectName)\$(Configuration)\bin\</OutDir>
+    <IntDir>$(SolutionDir)_builds\$(ProjectName)\$(Configuration)\obj\</IntDir>
+    <LinkIncremental>false</LinkIncremental>
+    <LocalDebuggerWorkingDirectory>$(SolutionDir)..\..\data</LocalDebuggerWorkingDirectory>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalOptions>/utf-8 /Zc:strictStrings %(AdditionalOptions)</AdditionalOptions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <FunctionLevelLinking>$(Optimized)</FunctionLevelLinking>
+      <IntrinsicFunctions>$(Optimized)</IntrinsicFunctions>
+      <Optimization Condition="'$(Optimized)'=='false'">Disabled</Optimization>
+      <Optimization Condition="'$(Optimized)'=='true'">MaxSpeed</Optimization>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Debug'">_DEBUG;_CRT_SECURE_NO_WARNINGS;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Development'">RAPTOR_BUILD_DEVELOPMENT;NDEBUG;_CRT_SECURE_NO_WARNINGS;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)'=='Release'">NDEBUG;_CRT_SECURE_NO_WARNINGS;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded$(RuntimeLibrarySuffix)DLL</RuntimeLibrary>
+      <WarningLevel>Level3</WarningLevel>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\bits.h" />
+    <ClInclude Include="..\src\gamepak.h" />
+    <ClInclude Include="..\src\gli2a03.h" />
+    <ClInclude Include="..\src\gli2c02.h" />
+    <ClInclude Include="..\src\mapper.h" />
+    <ClInclude Include="..\src\vgfw.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\gamepak.cpp" />
+    <ClCompile Include="..\src\gli2a03.cpp" />
+    <ClCompile Include="..\src\gli2c02.cpp" />
+    <ClCompile Include="..\src\main.cpp" />
+    <ClCompile Include="..\src\mapper.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="..\data\ntscpalette.pal">
+      <FileType>Document</FileType>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\..\data</DestinationFolders>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\data</DestinationFolders>
+    </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\data\vga9.png">
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">_builds\fontgen\$(Configuration)\bin\fontgen.exe -o ..\src\vga9.h -n vga9 %(Identity)</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Generating VGA9 font</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">..\src\vga9.h</Outputs>
+      <OutputItemType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">ClInclude</OutputItemType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_builds\fontgen\$(Configuration)\bin\fontgen.exe -o ..\src\vga9.h -n vga9 %(Identity)</Command>
+      <Message Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Generating VGA9 font</Message>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\src\vga9.h</Outputs>
+      <OutputItemType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">ClInclude</OutputItemType>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">_builds\fontgen\$(Configuration)\bin\fontgen.exe</AdditionalInputs>
+      <AdditionalInputs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_builds\fontgen\$(Configuration)\bin\fontgen.exe</AdditionalInputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\fontgen\project\fontgen.vcxproj">
+      <Project>{5d156c02-4d05-4352-8dd9-c8feaa22e410}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

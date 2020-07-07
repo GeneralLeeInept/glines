@@ -15,43 +15,50 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="vgfw.h">
+    <ClInclude Include="..\src\vgfw.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="vga9.h">
+    <ClInclude Include="..\src\gli2a03.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gli2a03.h">
+    <ClInclude Include="..\src\gamepak.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gamepak.h">
+    <ClInclude Include="..\src\gli2c02.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="gli2c02.h">
+    <ClInclude Include="..\src\bits.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="bits.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="mapper.h">
+    <ClInclude Include="..\src\mapper.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="..\src\main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gli2a03.cpp">
+    <ClCompile Include="..\src\gli2a03.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gamepak.cpp">
+    <ClCompile Include="..\src\gamepak.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="gli2c02.cpp">
+    <ClCompile Include="..\src\gli2c02.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="mapper.cpp">
+    <ClCompile Include="..\src\mapper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="..\data\ntscpalette.pal">
+      <Filter>Resource Files</Filter>
+    </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\data\vga9.png">
+      <Filter>Resource Files</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>

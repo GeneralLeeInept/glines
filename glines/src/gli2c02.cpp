@@ -121,6 +121,8 @@ void gli2C02::reset(bool coldstart)
     _scanline = 0;
     _cycle = 0;
     _state_flags = StateFlags::Reset;
+    _active_sprites = 0;
+    _sprite_zero_visible = 0;
 }
 
 
