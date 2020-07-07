@@ -487,33 +487,36 @@ void gli2C02::clock()
                     bg_palette = (ah << 1) | al;
                 }
 
-                bool sprite_zero_drawn = false;
-
-                if (_ppumask.s && _cycle > (_ppumask.M ? 0 : 8))
+                if (_scanline > 0)
                 {
-                    // Produce foreground (sprite) pixel
-                    for (uint8_t sprite = 0; sprite < (_active_sprites & 0xF); ++sprite)
-                    {
-                        if (_sprite_output_units[sprite].x_position == 0)
-                        {
-                            uint8_t pl = (_sprite_output_units[sprite].pattern_lo >> 7) & 1;
-                            uint8_t ph = (_sprite_output_units[sprite].pattern_hi >> 7) & 1;
-                            fg_pixel = (ph << 1 | pl);
-                            fg_palette = (_sprite_output_units[sprite].attributes & 0x3) + 4;
-                            fg_priority = (_sprite_output_units[sprite].attributes & (1 << 5)) == 0;
+                    bool sprite_zero_drawn = false;
 
-                            if (fg_pixel)
+                    if (_ppumask.s && _cycle > (_ppumask.M ? 0 : 8))
+                    {
+                        // Produce foreground (sprite) pixel
+                        for (uint8_t sprite = 0; sprite < (_active_sprites & 0xF); ++sprite)
+                        {
+                            if (_sprite_output_units[sprite].x_position == 0)
                             {
-                                sprite_zero_drawn = (sprite == 0);
-                                break;
+                                uint8_t pl = (_sprite_output_units[sprite].pattern_lo >> 7) & 1;
+                                uint8_t ph = (_sprite_output_units[sprite].pattern_hi >> 7) & 1;
+                                fg_pixel = (ph << 1 | pl);
+                                fg_palette = (_sprite_output_units[sprite].attributes & 0x3) + 4;
+                                fg_priority = (_sprite_output_units[sprite].attributes & (1 << 5)) == 0;
+
+                                if (fg_pixel)
+                                {
+                                    sprite_zero_drawn = (sprite == 0);
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                // Set sprite zero hit flag
-                if (bg_pixel && sprite_zero_drawn)
-                    _ppustatus.S |= _sprite_zero_visible & 1;
+                    // Set sprite zero hit flag
+                    if (bg_pixel && sprite_zero_drawn)
+                        _ppustatus.S |= _sprite_zero_visible & 1;
+                }
 
                 // Mux fg & bg pixels
                 uint8_t pixel = 0x00;
