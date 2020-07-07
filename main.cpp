@@ -60,28 +60,30 @@ public:
         CART_BASE = 0x4020,
     };
 
-
-    union ControllerState
+    struct ControllerState
     {
         uint8_t latch;
 
-        struct
+        union
         {
-            uint8_t right : 1;
-            uint8_t left : 1;
-            uint8_t down : 1;
-            uint8_t up : 1;
-            uint8_t start : 1;
-            uint8_t select : 1;
-            uint8_t b : 1;
-            uint8_t a : 1;
+            uint8_t buttons;
+
+            struct
+            {
+                uint8_t right : 1;
+                uint8_t left : 1;
+                uint8_t down : 1;
+                uint8_t up : 1;
+                uint8_t start : 1;
+                uint8_t select : 1;
+                uint8_t b : 1;
+                uint8_t a : 1;
+            };
         };
     };
 
-
-    ControllerState joy1_state{};
-    ControllerState joy2_state{};
-
+    ControllerState joy1{};
+    ControllerState joy2{};
 
     uint8_t read(uint16_t address)
     {
@@ -100,13 +102,13 @@ public:
         {
             if (address == JOY1)
             {
-                set_bit(value, 0, get_bit(joy1_state.latch, 7));
-                joy1_state.latch <<= 1;
+                set_bit(value, 0, get_bit(joy1.latch, 7));
+                joy1.latch <<= 1;
             }
             else if (address == JOY2)
             {
-                set_bit(value, 0, get_bit(joy2_state.latch, 7));
-                joy2_state.latch <<= 1;
+                set_bit(value, 0, get_bit(joy2.latch, 7));
+                joy2.latch <<= 1;
             }
         }
         else if (_game_pak)
@@ -140,14 +142,8 @@ public:
                 if ((value & 1)== 0)
                 {
                     // latch controller values
-                    //joy1_state.right = m_keys[VK_RIGHT].pressed;
-                    //joy1_state.left = m_keys[VK_LEFT].pressed;
-                    //joy1_state.up = m_keys[VK_UP].pressed;
-                    //joy1_state.down = m_keys[VK_DOWN].pressed;
-                    //joy1_state.start = m_keys['V'].pressed;
-                    //joy1_state.select = m_keys['B'].pressed;
-                    //joy1_state.a = m_keys['Z'].pressed;
-                    //joy1_state.b = m_keys['X'].pressed;
+                    joy1.latch = joy1.buttons;
+                    joy2.latch = joy2.buttons;
                 }
             }
         }
@@ -168,6 +164,8 @@ public:
         _ppu.reset(coldstart);
         _system_clock = 0;
         run_emulation = false;
+        joy1.latch = 0;
+        joy2.latch = 0;
     }
 
 
@@ -245,14 +243,14 @@ public:
 
             if (run_emulation)
             {
-                joy1_state.right = m_keys[VK_RIGHT].down;
-                joy1_state.left = m_keys[VK_LEFT].down;
-                joy1_state.up = m_keys[VK_UP].down;
-                joy1_state.down = m_keys[VK_DOWN].down;
-                joy1_state.start = m_keys['V'].down;
-                joy1_state.select = m_keys['B'].down;
-                joy1_state.a = m_keys['Z'].down;
-                joy1_state.b = m_keys['X'].down;
+                joy1.right = m_keys[VK_RIGHT].down;
+                joy1.left = m_keys[VK_LEFT].down;
+                joy1.up = m_keys[VK_UP].down;
+                joy1.down = m_keys[VK_DOWN].down;
+                joy1.start = m_keys['V'].down;
+                joy1.select = m_keys['B'].down;
+                joy1.a = m_keys['Z'].down;
+                joy1.b = m_keys['X'].down;
 
                 accumulated_time += delta;
 
