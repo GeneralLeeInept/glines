@@ -1,6 +1,7 @@
 #include "gamepak.h"
 
 #include "bits.h"
+#include "mapper.h"
 
 #include <fstream>
 
@@ -27,32 +28,6 @@ struct INesHeader
     uint8_t prg_ram : 1;
     uint8_t bus_conflicts : 1;
     uint8_t unused2 : 2;
-};
-
-
-class Mapper
-{
-public:
-    Mapper(GamePak& game_pak)
-        : _game_pak{ game_pak } {};
-
-    virtual uint8_t cpu_read(uint16_t address) = 0;
-    virtual void cpu_write(uint16_t address, uint8_t value) = 0;
-
-    virtual bool ppu_read(uint16_t address, uint8_t& value) = 0;
-    virtual bool ppu_write(uint16_t address, uint8_t value) = 0;
-
-    virtual bool ppu_remap_address(uint16_t& address)
-    {
-        return false;
-    }
-
-protected:
-    GamePak& _game_pak;
-
-    std::array<char, 16>& header() { return _game_pak._header_mem; }
-    std::vector<uint8_t>& prg_rom() { return _game_pak._prg_rom;  }
-    std::vector<uint8_t>& chr_rom() { return _game_pak._chr_rom;  }
 };
 
 
@@ -207,10 +182,36 @@ public:
         else if (address >= 0x1000 && address < 0x2000)
         {
             uint16_t offset = address & 0x0FFF;
-            value = prg_rom()[_x1000 + offset];
+            value = chr_rom()[_x1000 + offset];
             return true;
         }
-        else if (address >= 0x2000 && address < 0x2FFF)
+
+        return false;
+    }
+
+
+    bool ppu_write(uint16_t address, uint8_t value) override
+    {
+        if (address >= 0x0000 && address < 0x1000)
+        {
+            uint16_t offset = address & 0x0FFF;
+            chr_rom()[_x0000 + offset] = value;
+            return true;
+        }
+        else if (address >= 0x1000 && address < 0x2000)
+        {
+            uint16_t offset = address & 0x0FFF;
+            chr_rom()[_x1000 + offset] = value;
+            return true;
+        }
+
+        return false;
+    }
+
+
+    bool ppu_remap_address(uint16_t& address) override
+    {
+        if (address >= 0x2000 && address < 0x2FFF)
         {
             uint8_t mirroring = _control & 3;
             if (mirroring == 0)
@@ -226,43 +227,20 @@ public:
             else if (mirroring == 2)
             {
                 // 2: vertical
-                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2800)
-                {
-                    address = 0x2000 | (address & 0x3FF);
-                }
-                else if ((address & 0xFF00) == 0x2400 || (address & 0xFF00) == 0x2C00)
-                {
-                    address = 0x2400 | (address & 0x3FF);
-                }
+                set_bit(address, 11, 0);
             }
             else
             {
                 // 3: horizontal
-                if ((address & 0xFF00) == 0x2000 || (address & 0xFF00) == 0x2400)
-                {
-                    address = 0x2000 | (address & 0x3FF);
-                }
-                else if ((address & 0xFF00) == 0x2800 || (address & 0xFF00) == 0x2C00)
-                {
-                    address = 0x2400 | (address & 0x3FF);
-                }
+                set_bit(address, 10, get_bit(address, 11));
+                set_bit(address, 11, 0);
             }
-        }
-        return false;
-    }
 
-
-    bool ppu_write(uint16_t address, uint8_t value) override
-    {
-        if (address >= 0x0000 && address < 0x1000)
-        {
-            uint16_t offset = address & 0x0FFF;
-            chr_rom()[_x0000 + offset] = value;
             return true;
         }
+
         return false;
     }
-
 
     void update_prg_rom_mapping()
     {
@@ -278,12 +256,12 @@ public:
         {
             // Fix first bank at $8000 and switch 16 KB bank at $C000
             _x8000 = 0;
-            _xC000 = (_prg_bank & 0xE) * 0x4000;
+            _xC000 = _prg_bank * 0x4000;
         }
         else if (prg_mode == 3)
         {
             // Fix last bank at $C000 and switch 16 KB bank at $8000)
-            _x8000 = (_prg_bank & 0xE) * 0x4000;
+            _x8000 = _prg_bank * 0x4000;
             _xC000 = (header()[4] - 1) * 0x4000;
         }
     }
@@ -294,7 +272,7 @@ public:
         if (get_bit(_control, 4) == 0)
         {
             // Switch 8KB at a time
-            _x0000 = (_chr_bank_0 & 0xE) * 0x1000;
+            _x0000 = (_chr_bank_0 & 0xE) * 0x2000;
             _x1000 = _x0000 + 0x1000;
         }
         else
@@ -319,14 +297,72 @@ public:
 
 
     // PRG ROM mapping
-    uint16_t _x8000;
-    uint16_t _xC000;
+    uint32_t _x8000;
+    uint32_t _xC000;
 
 
     // CHR ROM mapping
     uint16_t _x0000;
     uint16_t _x1000;
 };
+
+
+class Mapper_002 : public Mapper
+{
+public:
+    Mapper_002(GamePak& game_pak)
+        : Mapper(game_pak)
+    {
+        _prg_banks[0] = 0;
+        _prg_banks[1] = header()[4] - 1;
+    }
+
+    uint8_t cpu_read(uint16_t address) override
+    {
+        if (address >= 0x8000)
+        {
+            uint8_t bank = _prg_banks[(address & 0x4000) >> 14];
+            uint8_t* bank_mem = prg_rom(bank);
+            return bank_mem[address & 0x3FFF] ;
+        }
+        return 0;
+    }
+
+    void cpu_write(uint16_t address, uint8_t value) override
+    {
+        if (address > 0x8000)
+        {
+            _prg_banks[0] = value % (header()[4] - 1);
+        }
+    }
+
+    bool ppu_read(uint16_t address, uint8_t& value) override
+    {
+        if (address < 0x2000)
+        {
+            uint16_t offset = address & 0x1FFF;
+            value = chr_rom()[offset];
+            return true;
+        }
+
+        return false;
+    }
+
+    bool ppu_write(uint16_t address, uint8_t value) override
+    {
+        if (address < 0x2000)
+        {
+            uint16_t offset = address & 0x1FFF;
+            chr_rom()[offset] = value;
+            return true;
+        }
+
+        return false;
+    }
+
+public:
+    uint8_t _prg_banks[2];
+}; 
 
 
 class Mapper_003 : public Mapper
@@ -488,6 +524,11 @@ bool GamePak::load(const std::string& path)
             case 1:
             {
                 _mapper = std::make_shared<Mapper_001>(*this);
+                break;
+            }
+            case 2:
+            {
+                _mapper = std::make_shared<Mapper_002>(*this);
                 break;
             }
             case 3:

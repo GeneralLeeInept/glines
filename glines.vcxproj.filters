@@ -33,6 +33,9 @@
     <ClInclude Include="bits.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="mapper.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -45,6 +48,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="gli2c02.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="mapper.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

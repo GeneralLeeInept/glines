@@ -280,8 +280,9 @@ void gli2C02::clock()
                             uint8_t oam_read_ptr = (_oamaddr + (sprite << 2)) & 0xFF;
                             uint8_t sprite_y = _oam[oam_read_ptr];
                             uint8_t oam_write_ptr = active_sprites << 2;
+                            int16_t diff = (int16_t)_scanline - (int16_t)sprite_y;
 
-                            if (sprite_y <= _scanline && (sprite_y + sprite_size) > _scanline)
+                            if (diff >= 0 && diff < sprite_size)
                             {
                                 _sprite_zero_visible |= (sprite == 0) ? 2 : 0;
 
@@ -316,16 +317,23 @@ void gli2C02::clock()
                 if (_cycle == 257)
                 {
                     memset(_sprite_output_units.data(), 0, sizeof(SpriteOutputUnit) * 8);
+                    uint8_t sprite_size = _ppuctrl.H ? 16 : 8;
 
                     for (uint8_t sprite = 0; sprite < (_active_sprites >> 4); ++sprite)
                     {
                         uint8_t oam_read_ptr = sprite << 2;
                         uint8_t sprite_y = _scanline - _secondary_oam[oam_read_ptr + 0];
                         uint8_t tile_index = _secondary_oam[oam_read_ptr + 1];
+                        _sprite_output_units[sprite].attributes = _secondary_oam[oam_read_ptr + 2];
+                        _sprite_output_units[sprite].x_position = _secondary_oam[oam_read_ptr + 3];
+
                         uint8_t pattern_table;
                         uint16_t lsb_address;
 
-                        // TODO: Vertically flipping changes things..
+                        if (_sprite_output_units[sprite].attributes & 0x80)
+                        {
+                            sprite_y = sprite_size - sprite_y - 1;
+                        }
 
                         if (_ppuctrl.H == 0)
                         {
@@ -334,14 +342,12 @@ void gli2C02::clock()
                         else
                         {
                             pattern_table = tile_index & 1;
-                            tile_index = (tile_index & 0xFE) + (sprite_y >> 7);
+                            tile_index = (tile_index & 0xFE) | (sprite_y >> 3);
                         }
 
                         lsb_address = (pattern_table << 0xC) | (tile_index << 4) | (sprite_y & 0x7);
                         _sprite_output_units[sprite].pattern_lo = read(lsb_address);
                         _sprite_output_units[sprite].pattern_hi = read(lsb_address + 8);
-                        _sprite_output_units[sprite].attributes = _secondary_oam[oam_read_ptr + 2];
-                        _sprite_output_units[sprite].x_position = _secondary_oam[oam_read_ptr + 3];
 
                         if (_sprite_output_units[sprite].attributes & (1 << 6))
                         {

@@ -144,6 +144,7 @@
     <ClInclude Include="gamepak.h" />
     <ClInclude Include="gli2a03.h" />
     <ClInclude Include="gli2c02.h" />
+    <ClInclude Include="mapper.h" />
     <ClInclude Include="vga9.h" />
     <ClInclude Include="vgfw.h" />
   </ItemGroup>
@@ -152,6 +153,7 @@
     <ClCompile Include="gli2a03.cpp" />
     <ClCompile Include="gli2c02.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="mapper.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
