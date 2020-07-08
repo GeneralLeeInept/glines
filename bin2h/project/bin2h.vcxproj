@@ -12,7 +12,7 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
-    <ProjectGuid>{9b29e5f6-c536-4627-b89b-a6686d33268a}</ProjectGuid>
+    <ProjectGuid>{36A9E5E3-8E3D-47CC-B833-2D17065D1F77}</ProjectGuid>
   </PropertyGroup>
   <PropertyGroup>
     <Optimized>true</Optimized>
@@ -53,50 +53,12 @@
       <WarningLevel>Level3</WarningLevel>
     </ClCompile>
     <Link>
-      <SubSystem>Windows</SubSystem>
+      <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\bits.h" />
-    <ClInclude Include="..\src\gamepak.h" />
-    <ClInclude Include="..\src\gli2a03.h" />
-    <ClInclude Include="..\src\gli2c02.h" />
-    <ClInclude Include="..\src\mapper.h" />
-    <ClInclude Include="..\src\vgfw.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\src\gamepak.cpp" />
-    <ClCompile Include="..\src\gli2a03.cpp" />
-    <ClCompile Include="..\src\gli2c02.cpp" />
-    <ClCompile Include="..\src\main.cpp" />
-    <ClCompile Include="..\src\mapper.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="..\data\ntscpalette.pal">
-      <Command>_builds\bin2h\$(Configuration)\bin\bin2h.exe -o ..\src\ntsc_palette.h -n ntsc_palette %(Identity)</Command>
-      <Message>Generating NTSC palette</Message>
-      <Outputs>..\src\ntsc_palette.h</Outputs>
-      <OutputItemType>ClInclude</OutputItemType>
-      <AdditionalInputs>_builds\bin2h\$(Configuration)\bin\bin2h.exe</AdditionalInputs>
-    </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
-    <CustomBuild Include="..\data\vga9.png">
-      <Command>_builds\fontgen\$(Configuration)\bin\fontgen.exe -o ..\src\vga9.h -n vga9 %(Identity)</Command>
-      <Message>Generating VGA9 font</Message>
-      <Outputs>..\src\vga9.h</Outputs>
-      <OutputItemType>ClInclude</OutputItemType>
-      <AdditionalInputs>_builds\fontgen\$(Configuration)\bin\fontgen.exe</AdditionalInputs>
-    </CustomBuild>
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\..\fontgen\project\fontgen.vcxproj">
-      <Project>{5d156c02-4d05-4352-8dd9-c8feaa22e410}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\..\bin2h\project\bin2h.vcxproj">
-      <Project>{36a9e5e3-8e3d-47cc-b833-2d17065d1f77}</Project>
-    </ProjectReference>
+    <ClCompile Include="..\src\bin2h.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

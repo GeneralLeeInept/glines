@@ -9,6 +9,7 @@
 #include "gamepak.h"
 #include "gli2a03.h"
 #include "gli2c02.h"
+#include "ntsc_palette.h"
 #include "vga9.h"
 
 class GliNes : public Vgfw
@@ -27,7 +28,7 @@ public:
 
     bool on_create() override
     {
-        load_palette("ntscpalette.pal");
+        set_palette(ntsc_palette, sizeof(ntsc_palette));
         _cpu.connect(std::bind(&GliNes::read, this, std::placeholders::_1), std::bind(&GliNes::write, this, std::placeholders::_1, std::placeholders::_2));
         reset(true);
         return true;

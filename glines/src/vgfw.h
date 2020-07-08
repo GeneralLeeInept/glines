@@ -235,15 +235,16 @@ public:
     }
 
 
-    void set_palette(uint8_t* palette)
+    void set_palette(const uint8_t* palette, int size)
     {
-        for (int p = 0; p < 256; ++p)
+        RGBQUAD* dest = m_palette;
+
+        for (int p = 0; p < size; p += 3)
         {
-            RGBQUAD entry = {};
-            entry.rgbRed = palette[p * 3];
-            entry.rgbGreen = palette[(p * 3) + 1];
-            entry.rgbBlue = palette[(p * 3) + 2];
-            m_palette[p] = entry;
+            dest->rgbRed = palette[p];
+            dest->rgbGreen = palette[p + 1];
+            dest->rgbBlue = palette[p + 2];
+            dest++;
         }
     }
 
@@ -259,7 +260,7 @@ public:
             f.read((char*)palette, 768);
         }
 
-        set_palette(palette);
+        set_palette(palette, 768);
     }
 
 
