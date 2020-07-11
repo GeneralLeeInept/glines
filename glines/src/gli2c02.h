@@ -23,8 +23,11 @@ public:
     void get_pattern_table(uint8_t table_index, uint8_t palette_index, std::array<uint8_t, 0x4000>& pattern_table);
     void get_palette(uint8_t palette_index, std::array<uint8_t, 4>& palette);
 
+    void clear_nmi() { _nmi = 0; }
+    uint8_t nmi() { return _nmi; }
+    uint64_t clock_count() { return _clocks; }
+
     std::array<uint8_t, 256 * 240> _screen;
-    uint8_t _nmi = 0;
 
 private:
     union PpuCtrlRegister
@@ -134,10 +137,13 @@ private:
 
 
     // Emulation state
+    uint64_t _clocks;
     uint32_t _frame;
     int16_t _scanline;
     uint16_t _cycle;
     uint8_t _state_flags;
+    uint8_t _nmi;
+
 
     uint8_t read(uint16_t address);
     void write(uint16_t address, uint8_t value);

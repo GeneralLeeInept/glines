@@ -62,15 +62,27 @@
     <ClInclude Include="..\src\gamepak.h" />
     <ClInclude Include="..\src\gli2a03.h" />
     <ClInclude Include="..\src\gli2c02.h" />
+    <ClInclude Include="..\src\log.h" />
     <ClInclude Include="..\src\mapper.h" />
+    <ClInclude Include="..\src\mapper_000.h" />
+    <ClInclude Include="..\src\mapper_001.h" />
+    <ClInclude Include="..\src\mapper_002.h" />
+    <ClInclude Include="..\src\mapper_003.h" />
+    <ClInclude Include="..\src\mapper_004.h" />
     <ClInclude Include="..\src\vgfw.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\gamepak.cpp" />
     <ClCompile Include="..\src\gli2a03.cpp" />
     <ClCompile Include="..\src\gli2c02.cpp" />
+    <ClCompile Include="..\src\log.cpp" />
     <ClCompile Include="..\src\main.cpp" />
     <ClCompile Include="..\src\mapper.cpp" />
+    <ClCompile Include="..\src\mapper_000.cpp" />
+    <ClCompile Include="..\src\mapper_001.cpp" />
+    <ClCompile Include="..\src\mapper_002.cpp" />
+    <ClCompile Include="..\src\mapper_003.cpp" />
+    <ClCompile Include="..\src\mapper_004.cpp" />
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="..\data\ntscpalette.pal">

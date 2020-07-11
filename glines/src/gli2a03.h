@@ -19,6 +19,7 @@ public:
     void clock();
 
     void dma(uint8_t page);
+    void irq();
     void nmi();
 
     std::string disassemble(uint16_t addr);
@@ -39,6 +40,7 @@ private:
     uint8_t _ir;
     uint8_t _instruction_cycles_remaining;
     uint8_t _nmi;       // NMI pulled down
+    uint8_t _irq;       // IRQ pulled down
     uint8_t _dma;       // DMA requested
     uint16_t _dmaaddr;  // Source address for DMA transfer
 

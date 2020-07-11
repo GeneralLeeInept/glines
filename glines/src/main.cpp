@@ -164,10 +164,15 @@ public:
     {
         _cpu.reset(coldstart);
         _ppu.reset(coldstart);
+
+        if (_game_pak)
+            _game_pak->reset(coldstart);
+
         _system_clock = 0;
         run_emulation = false;
         joy1.latch = 0;
         joy2.latch = 0;
+        memset(_ppu._screen.data(), 0, _ppu._screen.size());
     }
 
 
@@ -182,10 +187,10 @@ public:
 
         _ppu.clock();
 
-        if (_ppu._nmi)
+        if (_ppu.nmi())
         {
             _cpu.nmi();
-            _ppu._nmi = 0;
+            _ppu.clear_nmi();
         }
     }
 
@@ -198,6 +203,11 @@ public:
         if (!_game_pak->load(path))
         {
             _game_pak = nullptr;
+        }
+
+        if (_game_pak)
+        {
+            _game_pak->connect(&_cpu, &_ppu);
         }
 
         _ppu.connect_game_pak(_game_pak);
@@ -293,6 +303,9 @@ public:
         // TV display
         copy_rect_scaled(16, 16, DisplayWidth * DisplayScale, DisplayHeight * DisplayScale, _ppu._screen.data(), 256, DisplayScale);
 
+        // TODO: Add support for peeking at memory without causing the read side effects (e.g. reading $2002 modifying PPU state, reading
+        // pattern memory clocking the IRQ counter in MMC3 mapper..)
+#if 0
         // Dump RAM
         int ram_dump_x = 16 + (DisplayWidth * DisplayScale) + 16;
         int ram_dump_y = 16;
@@ -387,6 +400,7 @@ public:
                 }
             }
         }
+#endif
 
         return true;
     }
@@ -402,14 +416,21 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
         return 1;
     }
 
-    nes.load_game_pak(R"(D:\EMU\nes\nestest.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\official_only.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\instr_test-v5\all_instrs.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\1.Branch_Basics.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\2.Backward_Branch.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\branch_timing_tests\3.Forward_Branch.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\instr_timing\instr_timing.nes)");
-    //nes.load_game_pak(R"(D:\EMU\nes\ppu_vbl_nmi\ppu_vbl_nmi.nes)");
+    nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\nestest.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\branch_timing_tests\1.Branch_Basics.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\branch_timing_tests\2.Backward_Branch.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\branch_timing_tests\3.Forward_Branch.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\instr_test-v5\all_instrs.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\instr_test-v5\official_only.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\instr_timing\instr_timing.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\mmc3_test_2\rom_singles\1-clocking.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\mmc3_test_2\rom_singles\2-details.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\mmc3_test_2\rom_singles\3-A12_clocking.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\mmc3_test_2\rom_singles\4-scanline_timing.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\mmc3_test_2\rom_singles\5-MMC3.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\mmc3_test_2\rom_singles\6-MMC3_alt.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\ppu_vbl_nmi\ppu_vbl_nmi.nes)");
+    //nes.load_game_pak(R"(D:\EMU\nes\emulator_tests\scanline\scanline.nes)");
     nes.run();
 
     return 0;

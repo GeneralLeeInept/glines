@@ -1,10 +1,7 @@
 #include "gli2A03.h"
 
 #include "bits.h"
-
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <Windows.h>
+#include "log.h"
 
 // Addressing mode - high bit set means instructions which load across a page boundary using the addressing mode will incur a 1-cycle penalty.
 // Instruction length (in bytes) is determined by addressing mode
@@ -388,14 +385,14 @@ static const Instruction InstructionTable[] =
 
 enum StatusBits : uint8_t
 {
-    C = 0,
-    Z = 1,
-    I = 2,
-    D = 3,
-    B = 4,
+    Carry = 0,
+    Zero = 1,
+    InterruptDisable = 2,
+    Decimal = 3,
+    BFlag = 4,
     X = 5,
-    V = 6,
-    N = 7
+    Overflow = 6,
+    Negative = 7
 };
 
 
@@ -427,6 +424,9 @@ void gli2A03::reset(bool coldstart)
 
     _cycle_counter = 0;
     _instruction_cycles_remaining = 6;
+    _nmi = 0;
+    _irq = 0;
+    _dma = 0;
 }
 
 
@@ -438,10 +438,13 @@ void gli2A03::clock()
 
         if (_dma)
         {
-            // Copy from _dmaaddr to DMADATA register ($2004) on PPU
-            uint8_t value = read(_dmaaddr++);
-            write(0x2004, value);
-            _dma = _dmaaddr & 0xFF;
+            if ((_cycle_counter & 1) == 0)
+            {
+                // Copy from _dmaaddr to DMADATA register ($2004) on PPU
+                uint8_t value = read(_dmaaddr++);
+                write(0x2004, value);
+                _dma = _dmaaddr & 0xFF;
+            }
         }
         else
         {
@@ -449,22 +452,25 @@ void gli2A03::clock()
             {
                 // Fetch, decode & execute the next instruction
 
-                if (0)
-                {
-                    char log[128];
-                    std::string dissassembly = disassemble(_pc);
-                    snprintf(log, 128, "%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s, _cycle_counter);
-                    OutputDebugStringA(log);
-                }
-
                 if (_nmi)
                 {
-                    // Insert a BRK - don't clear _nmi because the BRK handler uses it to decide which interrupt vector to load
+                    _ir = 0x00;
+                    _pc -= 1;
+                }
+                else if (_irq && get_bit(_p, StatusBits::InterruptDisable) == 0)
+                {
                     _ir = 0x00;
                     _pc -= 1;
                 }
                 else
                 {
+                    if (0)
+                    {
+                        std::string dissassembly = disassemble(_pc);
+                        logf("%04X  %-32s A:%02X X:%02X Y:%02X P:%02X SP:%02X CYC:%lld\n", _pc, dissassembly.c_str(), _a, _x, _y, _p, _s,
+                            _cycle_counter);
+                    }
+
                     _ir = read(_pc++);
                 }
 
@@ -481,6 +487,12 @@ void gli2A03::dma(uint8_t page)
 {
     _dmaaddr = ((uint16_t)page) << 8;
     _dma = 1;
+}
+
+
+void gli2A03::irq()
+{
+    _irq = 1;
 }
 
 
@@ -619,40 +631,40 @@ void gli2A03::exec()
     auto load_register = [this, &value](uint8_t& reg)
     {
         reg = lo(value);
-        set_bit(_p, StatusBits::Z, reg == 0);
-        set_bit(_p, StatusBits::N, get_bit(reg, 7));
+        set_bit(_p, StatusBits::Zero, reg == 0);
+        set_bit(_p, StatusBits::Negative, get_bit(reg, 7));
     };
 
     auto decrement = [this](uint8_t& value)
     {
         value = value - 1;
-        set_bit(_p, StatusBits::Z, value == 0);
-        set_bit(_p, StatusBits::N, get_bit(value, 7));
+        set_bit(_p, StatusBits::Zero, value == 0);
+        set_bit(_p, StatusBits::Negative, get_bit(value, 7));
     };
 
     auto increment = [this](uint8_t& value)
     {
         value = value + 1;
-        set_bit(_p, StatusBits::Z, value == 0);
-        set_bit(_p, StatusBits::N, get_bit(value, 7));
+        set_bit(_p, StatusBits::Zero, value == 0);
+        set_bit(_p, StatusBits::Negative, get_bit(value, 7));
     };
 
     auto adc = [this, &value]()
     {
-        uint16_t sum = _a + value + get_bit(_p, StatusBits::C);
-        set_bit(_p, StatusBits::C, get_bit(sum, 8));
-        set_bit(_p, StatusBits::V, (get_bit((_a ^ sum) & (value ^ sum), 7)));
+        uint16_t sum = _a + value + get_bit(_p, StatusBits::Carry);
+        set_bit(_p, StatusBits::Carry, get_bit(sum, 8));
+        set_bit(_p, StatusBits::Overflow, (get_bit((_a ^ sum) & (value ^ sum), 7)));
         _a = lo(sum);
-        set_bit(_p, StatusBits::Z, _a == 0);
-        set_bit(_p, StatusBits::N, get_bit(_a, 7));
+        set_bit(_p, StatusBits::Zero, _a == 0);
+        set_bit(_p, StatusBits::Negative, get_bit(_a, 7));
     };
 
     auto cmp = [this, &value, &address](uint8_t reg)
     {
         value = read(address);
-        set_bit(_p, StatusBits::C, reg >= value);
-        set_bit(_p, StatusBits::Z, reg == value);
-        set_bit(_p, StatusBits::N, get_bit(reg - value, 7));
+        set_bit(_p, StatusBits::Carry, reg >= value);
+        set_bit(_p, StatusBits::Zero, reg == value);
+        set_bit(_p, StatusBits::Negative, get_bit(reg - value, 7));
     };
 
     switch (instruction.opcode)
@@ -680,7 +692,7 @@ void gli2A03::exec()
                 value = read(address);
             }
 
-            set_bit(_p, StatusBits::C, get_bit(value, 7));
+            set_bit(_p, StatusBits::Carry, get_bit(value, 7));
             value <<= 1;
 
             if (instruction.addressing_mode == AddressingMode::Implied)
@@ -689,15 +701,15 @@ void gli2A03::exec()
             }
             else
             {
-                set_bit(_p, StatusBits::Z, value == 0);
-                set_bit(_p, StatusBits::N, get_bit(value, 7));
+                set_bit(_p, StatusBits::Zero, value == 0);
+                set_bit(_p, StatusBits::Negative, get_bit(value, 7));
                 write(address, value);
             }
             break;
         }
         case Opcode::BCC:
         {
-            if (!get_bit(_p, StatusBits::C))
+            if (!get_bit(_p, StatusBits::Carry))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -706,7 +718,7 @@ void gli2A03::exec()
         }
         case Opcode::BCS:
         {
-            if (get_bit(_p, StatusBits::C))
+            if (get_bit(_p, StatusBits::Carry))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -715,7 +727,7 @@ void gli2A03::exec()
         }
         case Opcode::BEQ:
         {
-            if (get_bit(_p, StatusBits::Z))
+            if (get_bit(_p, StatusBits::Zero))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -725,14 +737,14 @@ void gli2A03::exec()
         case Opcode::BIT:
         {
             value = read(address);
-            set_bit(_p, StatusBits::Z, (_a & value) == 0);
-            set_bit(_p, StatusBits::V, get_bit(value, 6));
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(_p, StatusBits::Zero, (_a & value) == 0);
+            set_bit(_p, StatusBits::Overflow, get_bit(value, 6));
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
             break;
         }
         case Opcode::BMI:
         {
-            if (get_bit(_p, StatusBits::N))
+            if (get_bit(_p, StatusBits::Negative))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -741,7 +753,7 @@ void gli2A03::exec()
         }
         case Opcode::BNE:
         {
-            if (!get_bit(_p, StatusBits::Z))
+            if (!get_bit(_p, StatusBits::Zero))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -750,7 +762,7 @@ void gli2A03::exec()
         }
         case Opcode::BPL:
         {
-            if (!get_bit(_p, StatusBits::N))
+            if (!get_bit(_p, StatusBits::Negative))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -763,24 +775,25 @@ void gli2A03::exec()
             push(hi(_pc));
             push(lo(_pc));
             value = _p;
-            set_bit(value, StatusBits::B, _nmi ? 0 : 1);
+            set_bit(value, StatusBits::BFlag, (_nmi || _irq) ? 0 : 1);
             set_bit(value, StatusBits::X, 1);
             push(_p);
-            set_bit(value, StatusBits::I, 1);
+            set_bit(_p, StatusBits::InterruptDisable, 1);
             _pc = read_word(_nmi ? 0xFFFA : 0xFFFE);
 
-            if (!_nmi)
-            {
+            if (!_nmi && !_irq)
                 _stopped = true;
-            }
 
-            _nmi = 0;
+            if (_nmi)
+                _nmi = 0;
+            else if (_irq)
+                _irq = 0;
 
             break;
         }
         case Opcode::BVC:
         {
-            if (!get_bit(_p, StatusBits::V))
+            if (!get_bit(_p, StatusBits::Overflow))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -789,7 +802,7 @@ void gli2A03::exec()
         }
         case Opcode::BVS:
         {
-            if (get_bit(_p, StatusBits::V))
+            if (get_bit(_p, StatusBits::Overflow))
             {
                 _instruction_cycles_remaining += (hi(address) == hi(_pc)) ? 1 : 2;
                 _pc = address;
@@ -798,22 +811,22 @@ void gli2A03::exec()
         }
         case Opcode::CLC:
         {
-            set_bit(_p, StatusBits::C, 0);
+            set_bit(_p, StatusBits::Carry, 0);
             break;
         }
         case Opcode::CLD:
         {
-            set_bit(_p, StatusBits::D, 0);
+            set_bit(_p, StatusBits::Decimal, 0);
             break;
         }
         case Opcode::CLI:
         {
-            set_bit(_p, StatusBits::I, 0);
+            set_bit(_p, StatusBits::InterruptDisable, 0);
             break;
         }
         case Opcode::CLV:
         {
-            set_bit(_p, StatusBits::V, 0);
+            set_bit(_p, StatusBits::Overflow, 0);
             break;
         }
         case Opcode::CMP:
@@ -913,10 +926,10 @@ void gli2A03::exec()
                 value = read(address);
             }
 
-            set_bit(_p, StatusBits::C, get_bit(value, 0));
+            set_bit(_p, StatusBits::Carry, get_bit(value, 0));
             value >>= 1;
-            set_bit(_p, StatusBits::Z, value == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(_p, StatusBits::Zero, value == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
 
             if (instruction.addressing_mode == AddressingMode::Implied)
             {
@@ -948,7 +961,7 @@ void gli2A03::exec()
         case Opcode::PHP:
         {
             value = _p;
-            set_bit(value, StatusBits::B, 1);
+            set_bit(value, StatusBits::BFlag, 1);
             set_bit(value, StatusBits::X, 1);
             push(value);
             break;
@@ -962,7 +975,7 @@ void gli2A03::exec()
         case Opcode::PLP:
         {
             value = pop();
-            set_bit(value, StatusBits::B, 0);
+            set_bit(value, StatusBits::BFlag, 0);
             set_bit(value, StatusBits::X, 0);
             _p = value;
             break;
@@ -980,10 +993,10 @@ void gli2A03::exec()
 
             int c = get_bit(value, 7);
             value <<= 1;
-            set_bit(value, 0, get_bit(_p, StatusBits::C));
-            set_bit(_p, StatusBits::C, c);
-            set_bit(_p, StatusBits::Z, value == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(value, 0, get_bit(_p, StatusBits::Carry));
+            set_bit(_p, StatusBits::Carry, c);
+            set_bit(_p, StatusBits::Zero, value == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
 
             if (instruction.addressing_mode == AddressingMode::Implied)
             {
@@ -1009,10 +1022,10 @@ void gli2A03::exec()
 
             int c = get_bit(value, 0);
             value >>= 1;
-            set_bit(value, 7, get_bit(_p, StatusBits::C));
-            set_bit(_p, StatusBits::C, c);
-            set_bit(_p, StatusBits::Z, value == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(value, 7, get_bit(_p, StatusBits::Carry));
+            set_bit(_p, StatusBits::Carry, c);
+            set_bit(_p, StatusBits::Zero, value == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
 
             if (instruction.addressing_mode == AddressingMode::Implied)
             {
@@ -1028,7 +1041,7 @@ void gli2A03::exec()
         case Opcode::RTI:
         {
             value = pop();
-            set_bit(value, StatusBits::B, 0);
+            set_bit(value, StatusBits::BFlag, 0);
             set_bit(value, StatusBits::X, 0);
             _p = value;
             uint8_t lo = pop();
@@ -1051,17 +1064,17 @@ void gli2A03::exec()
         }
         case Opcode::SEC:
         {
-            set_bit(_p, StatusBits::C, 1);
+            set_bit(_p, StatusBits::Carry, 1);
             break;
         }
         case Opcode::SED:
         {
-            set_bit(_p, StatusBits::D, 1);
+            set_bit(_p, StatusBits::Decimal, 1);
             break;
         }
         case Opcode::SEI:
         {
-            set_bit(_p, StatusBits::I, 1);
+            set_bit(_p, StatusBits::InterruptDisable, 1);
             break;
         }
         case Opcode::STA:
@@ -1121,7 +1134,7 @@ void gli2A03::exec()
             // Equivalent to AND #i then LSR A.Some sources call this "ASR"; we do not follow this out of confusion with the mnemonic for a
             // pseudoinstruction that combines CMP #$80(or ANC #$FF) then ROR.Note that ALR #$FE acts like LSR followed by CLC.
             value = _a & read(address);
-            set_bit(_p, StatusBits::C, get_bit(value, 0));
+            set_bit(_p, StatusBits::Carry, get_bit(value, 0));
             value >>= 1;
             load_register(_a);
             break;
@@ -1130,7 +1143,7 @@ void gli2A03::exec()
         {
             value = _a & read(address);
             load_register(_a);
-            set_bit(_p, StatusBits::C, get_bit(_p, StatusBits::N));
+            set_bit(_p, StatusBits::Carry, get_bit(_p, StatusBits::Negative));
             break;
         }
         case Opcode::ARR:
@@ -1140,17 +1153,17 @@ void gli2A03::exec()
             value = _a & read(address);
             int c = get_bit(value, 0);
             value >>= 1;
-            set_bit(value, 7, get_bit(_p, StatusBits::C));
+            set_bit(value, 7, get_bit(_p, StatusBits::Carry));
             load_register(_a);
-            set_bit(_p, StatusBits::C, get_bit(value, 6));
-            set_bit(_p, StatusBits::V, get_bit(value, 6) ^ get_bit(value, 5));
+            set_bit(_p, StatusBits::Carry, get_bit(value, 6));
+            set_bit(_p, StatusBits::Overflow, get_bit(value, 6) ^ get_bit(value, 5));
             break;
         }
         case Opcode::AXS:
         {
             // Sets X to { (A AND X) - #value without borrow }, and updates NZC.
             value = read(address);
-            set_bit(_p, StatusBits::C, (_a & _x) >= value);
+            set_bit(_p, StatusBits::Carry, (_a & _x) >= value);
             value = (_a & _x) - read(address);
             load_register(_x);
             break;
@@ -1160,9 +1173,9 @@ void gli2A03::exec()
             value = read(address);
             decrement(value);
             write(address, value);
-            set_bit(_p, StatusBits::C, _a >= value);
-            set_bit(_p, StatusBits::Z, _a == value);
-            set_bit(_p, StatusBits::N, get_bit(_a - value, 7));
+            set_bit(_p, StatusBits::Carry, _a >= value);
+            set_bit(_p, StatusBits::Zero, _a == value);
+            set_bit(_p, StatusBits::Negative, get_bit(_a - value, 7));
             break;
         }
         case Opcode::ISC:
@@ -1186,10 +1199,10 @@ void gli2A03::exec()
             value = read(address);
             int c = get_bit(value, 7);
             value <<= 1;
-            set_bit(value, 0, get_bit(_p, StatusBits::C));
-            set_bit(_p, StatusBits::C, c);
-            set_bit(_p, StatusBits::Z, value == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(value, 0, get_bit(_p, StatusBits::Carry));
+            set_bit(_p, StatusBits::Carry, c);
+            set_bit(_p, StatusBits::Zero, value == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
             write(address, value);
             value = _a & value;
             load_register(_a);
@@ -1200,10 +1213,10 @@ void gli2A03::exec()
             value = read(address);
             int c = get_bit(value, 0);
             value >>= 1;
-            set_bit(value, 7, get_bit(_p, StatusBits::C));
-            set_bit(_p, StatusBits::C, c);
-            set_bit(_p, StatusBits::Z, value == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(value, 7, get_bit(_p, StatusBits::Carry));
+            set_bit(_p, StatusBits::Carry, c);
+            set_bit(_p, StatusBits::Zero, value == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
             write(address, value);
             adc();
             break;
@@ -1217,10 +1230,10 @@ void gli2A03::exec()
         case Opcode::SLO:
         {
             value = read(address);
-            set_bit(_p, StatusBits::C, get_bit(value, 7));
+            set_bit(_p, StatusBits::Carry, get_bit(value, 7));
             value <<= 1;
-            set_bit(_p, StatusBits::Z, _a == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(_p, StatusBits::Zero, _a == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
             write(address, value);
             value = _a | value;
             load_register(_a);
@@ -1229,10 +1242,10 @@ void gli2A03::exec()
         case Opcode::SRE:
         {
             value = read(address);
-            set_bit(_p, StatusBits::C, get_bit(value, 0));
+            set_bit(_p, StatusBits::Carry, get_bit(value, 0));
             value >>= 1;
-            set_bit(_p, StatusBits::Z, value == 0);
-            set_bit(_p, StatusBits::N, get_bit(value, 7));
+            set_bit(_p, StatusBits::Zero, value == 0);
+            set_bit(_p, StatusBits::Negative, get_bit(value, 7));
             write(address, value);
             value = _a ^ value;
             load_register(_a);
